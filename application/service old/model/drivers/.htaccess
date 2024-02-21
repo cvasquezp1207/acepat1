@@ -1,0 +1,4 @@
+#Protect the .htaccess File
+ 
+order allow,deny
+deny from all

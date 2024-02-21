@@ -1,0 +1,26 @@
+{
+  "name": "sistema",
+  "description": "Sistema de Seguridad",
+  "main": "",
+  "moduleType": [],
+  "authors": [
+    "Augusto Gabriel Luna Bardales"
+  ],
+  "license": "MIT",
+  "homepage": "",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "foundation": "~5.5.3",
+    "font-awesome": "fontawesome#~4.4.0",
+    "datatables.net": "~1.10.10",
+    "datatables.net-bs": "~1.10.10",
+    "datatables.net-responsive": "~2.0.0",
+    "datatables.net-responsive-bs": "~2.0.0"
+  }
+}

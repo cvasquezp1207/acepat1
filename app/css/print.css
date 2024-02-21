@@ -1,0 +1,207 @@
+body {
+    /*width: 782.36px;*/ 
+	font-family: Arial;
+	font-size: 8.5px;
+}
+
+.recibo-data, .recibo-info {
+    display: inline-block; 
+    position: relative; 
+    /*border-right: dotted 1px #666;*/ 
+    border-bottom: dotted 1px #666;
+    /*background: #fff url("../images/background.png") no-repeat top right;*/
+    vertical-align: top;
+    height: 348px;
+}
+.recibo-data {/*width: 400.63px;*/border-right: dotted 1px #666; background: #fff url("../images/background.png") no-repeat top right;}
+.recibo-info {width: 330px;}
+
+.barra-data {width: 283.46px; height: 11.34px; background-color: #999933; display: block;}
+
+.contenido-data {padding: 3.78px 11.34px 3.78px 22.68px}
+
+.clearfix:after {visibility: hidden; display: block; font-size: 0; content: '.'; clear: both; height: 0;}
+
+.data-header {color: #999933;}
+
+.logo, .barcode {display: inline-block; float: left;}
+
+.logo img {
+    width: 44px;
+height: 57px;
+vertical-align: top;}
+
+.logo ul {display: inline-block;}
+
+.barcode {padding-left: 18px;}
+
+.barcode img {
+    height: 42px;
+width: 150px;
+margin-left: 20px;
+/*margin-top: 4px;*/
+}
+
+.data-info {margin-top: 2px; font-size: 11px;}
+.label {color: #999933;}
+
+.input-periodo {
+    font-size: 14px;
+font-weight: bold;
+width: 204px;
+display: inline-block;
+text-align: center;
+}
+
+.input-nombre {margin-left: 24px;}
+.input-domicilio {margin-left: 16px;}
+.input-lugar {margin-left: 30px;}
+.input-fechae {
+    width: 110px;
+display: inline-block;
+}
+
+.data-detalle {margin-top: 2px;}
+
+.bloque {
+    padding: 4px 11px;
+    border: solid 1px #999933;
+    display: inline-block;
+    /*margin-right: 3px;*/
+    vertical-align: top;
+    -moz-border-radius: 8px;
+    -webkit-border-radius: 8px;
+    border-radius: 8px;
+    font-size: 9px;
+    /*height: 178px;*/
+    /*height: 147px;*/
+}
+
+.bloque p.title {text-align: right;}
+
+.bloque-info{width: 135px; margin-right: 1px;}
+/*.bloque-data{width: 180px;}*/
+.bloque-data{width: 350px; font-size: 10px;}
+
+.bloque-title {
+    font-weight: bold; 
+    color: #999933;
+    padding: 3px 4px;
+    border: solid 1px #999933;
+    border-radius: 5px;
+    display: inline-block;
+    font-style: italic;
+}
+
+.bloque-web {text-decoration: underline; font-weight: bold; font-size: 12px;}
+
+.bloque-data ul {
+    margin-top: 11px; 
+    /*height: 121px;*/
+    height: 97px;
+}
+
+.bloque-data ul li {margin-top: 5px;}
+.bloque-data ul li span {float: right;}
+
+.detalle-total-label {
+    color: #999933;
+font-size: 10px;
+font-style: italic;
+}
+.detalle-total {
+    font-size: 12px;
+font-weight: bold;
+display: inline-block;
+border: solid 1px #999933;
+padding: 5px 8px;
+border-radius: 5px;
+margin-right: 85px;
+}
+
+.data-footer {margin-top: 2px;}
+
+
+
+
+
+/*Segundo bloque*/
+.title-info {
+    padding-top: 15px;
+    padding-left: 15px;
+    font-size: 15px;
+font-weight: bold;
+color: #DDDDDD;
+}
+
+.barra-info {
+    width: 208px; height: 11.34px; background-color: #999933; display: block;
+}
+
+.info-contenido {margin-top: 45px;}
+
+.recibo-info {text-align: right;}
+.recibo-info img {display: inline-block; vertical-align: top;}
+.first-image {
+    width: 327px; 
+    /*width: 225px;*/ 
+             height: 345px;
+}
+.second-image {
+    width: 101px; 
+              height: 345px;
+}
+
+
+
+
+
+/*estilos para la pagina*/
+.page {
+    width: 21cm;
+    min-height: 29.7cm;
+    /*margin: 1cm auto;*/
+/*    padding: 2cm;
+    border: 1px #D3D3D3 solid;
+    border-radius: 5px;
+    background: white;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);*/
+}
+@page {
+    size: A4;
+    margin: 0;
+}
+@media print {
+    .page {
+        margin: 0;
+        border: initial;
+        border-radius: initial;
+        width: 20.2cm;
+        min-height: 28cm;
+        box-shadow: initial;
+        background: initial;
+        page-break-after: always;
+    }
+}
+
+
+/* nuevos estilos para el codigo de barras */
+.text-right {text-align: right;}
+.content-bloque2 {width: 570px;}
+.bloque2 {
+    padding: 4px 5px;
+    border: solid 1px #999933;
+    display: inline-block;
+    /*margin-right: 3px;*/
+    vertical-align: top;
+    font-size: 10px;
+	margin-right: 10px;
+	margin-bottom: 10px;
+}
+.bloque2 .left {float:left;text-align:center;}
+.bloque2 .left img.bar {display:block;}
+.bloque2 .left span.bar {font-size:12px;}
+
+.bloque2 .right {float:right;text-align:right;}
+.bloque2 .right .precio {font-size: 16px; font-weight:bold;}
+.bloque2 .item {font-size: 11px; font-weight:bold;}

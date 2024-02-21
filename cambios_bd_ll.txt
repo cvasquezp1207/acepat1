@@ -1,0 +1,3015 @@
+----------------------------------------------------- 27/08/2016 --------------------------------------------------
+-- CREANDO ESQUEMA PARA AUDITAR
+  CREATE SCHEMA auditoria
+
+--CREANDO tabla para auditar
+  CREATE TABLE auditoria.tabla_log
+  (
+    idlog serial NOT NULL,
+    direccion_ip character varying(15),
+    fecha_registro date,
+    hora_registro time without time zone,
+    tabla character varying(50),
+    pk_tabla character varying(30),
+    controller character varying(80),
+    accion character varying(100),
+    esquema character varying(100),
+    idusuario character varying(12),
+    pk_value character varying(20),
+    old_value text,
+    new_value text,
+    idsucursal integer,
+    identificador character varying(15),
+    referencia text,
+    estado character(1),
+    CONSTRAINT pk_log PRIMARY KEY (idlog)
+  )
+  WITH (
+    OIDS=FALSE
+  );
+  ALTER TABLE auditoria.tabla_log
+    OWNER TO postgres;
+----------------------------------------------------- 27/08/2016 --------------------------------------------------
+
+
+----------------------------------------------------- 29/08/2016 --------------------------------------------------
+--cambiando tipo de dato a las series, para que soporte las facturas electronicas
+ALTER TABLE venta.serie_documento ALTER COLUMN serie TYPE character varying(6);
+
+-- cambiando el tipo de dato de la serie en la tabla venta, es necesario correr tal como esta el orden
+DROP VIEW venta.venta_view;
+ALTER TABLE venta.venta ALTER COLUMN serie TYPE character varying(6);
+
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa,
+    v.idcliente,
+    v.idsucursal,
+    v.idtipoventa,
+    v.idusuario,
+    v.fecha_venta,
+    v.fecha_registro,
+    v.estado,
+    v.serie,
+    v.correlativo,
+    v.idtipodocumento,
+    v.idalmacen,
+    v.despachado,
+    v.subtotal,
+    v.valor_igv,
+    v.igv,
+    v.descuento,
+    v.idvendedor,
+    v.cancelado,
+    v.pasa_despacho,
+    v.idmoneda,
+    v.cambio_moneda,
+    c.nombres,
+    c.apellidos,
+    (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres,
+    tv.descripcion AS tipo_venta,
+    td.descripcion AS tipo_documento,
+    (((td.abreviatura::text || ''::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante,
+    m.descripcion AS moneda,
+    v.subtotal + v.igv - v.descuento AS total,
+    v.con_credito,
+    to_char(v.fecha_venta, 'DD/MM/YYYY'::text) AS fecha_venta_format
+   FROM venta.venta v
+     JOIN venta.cliente c ON c.idcliente = v.idcliente
+     JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+     JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+     JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+  
+  -- cambiando el tipo de dato de la serie en la tabla recibo egreso, es necesario correr tal como esta el orden
+  DROP VIEW venta.reciboegreso_view;
+ALTER TABLE venta.reciboegreso ALTER COLUMN serie TYPE character varying(6);
+CREATE OR REPLACE VIEW venta.reciboegreso_view AS 
+ SELECT r.idreciboegreso,
+    r.serie,
+    r.numero,
+    r.tabla,
+    r.idpersona,
+    r.monto,
+    r.idmoneda,
+    r.tipocambio,
+    r.fecha,
+    r.hora,
+    r.concepto,
+    r.idtipopago,
+    r.idamortizacion,
+    r.idusuario,
+    r.idsucursal,
+    r.tipo_egreso,
+    r.idconceptomovimiento,
+    r.idtipodocumento_ref,
+    r.idtipodocumento,
+    r.serie_doc,
+    r.numero_doc,
+    r.estado,
+        CASE
+            WHEN r.tabla::text = 'CLIENTE'::text THEN ( SELECT c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text)
+               FROM venta.cliente c
+              WHERE c.idcliente = r.idpersona)
+            WHEN r.tabla::text = 'EMPLEADO'::text THEN ( SELECT (u.nombres::text || u.appat::text) || u.apmat::text
+               FROM seguridad.usuario u
+              WHERE u.idusuario = r.idpersona)
+            ELSE NULL::text
+        END AS referencia,
+    (r.serie::text || '-'::text) || r.numero::text AS recibo
+   FROM venta.reciboegreso r;
+
+ALTER TABLE venta.reciboegreso_view
+  OWNER TO postgres;
+  
+  
+  -- cambiando el tipo de dato de la serie en la tabla recibo ingreso, es necesario correr tal como esta el orden
+	DROP VIEW venta.reciboingreso_view;
+	DROP VIEW venta.reciboingreso_canje_view;
+	ALTER TABLE venta.reciboingreso ALTER COLUMN serie TYPE character varying(6);
+
+	CREATE OR REPLACE VIEW venta.reciboingreso_view AS 
+	 SELECT r.idreciboingreso,
+		r.serie,
+		r.numero,
+		r.idcliente,
+		r.monto,
+		r.idmoneda,
+		r.tipocambio,
+		r.fecha,
+		r.hora,
+		r.concepto,
+		r.idtipopago,
+		r.idamortizacion,
+		r.idusuario,
+		r.idsucursal,
+		r.tipo_ingreso,
+		r.idconceptomovimiento,
+		r.idtipodocumento_ref,
+		r.idtipodocumento,
+		r.serie_doc,
+		r.numero_doc,
+		r.estado,
+		c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente,
+		(r.serie::text || '-'::text) || r.numero::text AS recibo
+	   FROM venta.reciboingreso r
+		 JOIN venta.cliente c ON c.idcliente = r.idcliente;
+
+	ALTER TABLE venta.reciboingreso_view
+	  OWNER TO postgres;
+
+	CREATE OR REPLACE VIEW venta.reciboingreso_canje_view AS 
+	 SELECT r.idreciboingreso,
+		(((td.abreviatura::text || '-'::text) || r.serie::text) || '-'::text) || r.numero::text AS nrodoc,
+		r.idcliente,
+		r.idmoneda,
+		r.fecha,
+		r.canjeado,
+		r.monto,
+		r.concepto,
+		r.idtipopago,
+		r.idtipo_recibo,
+		m.descripcion AS moneda,
+		t.descripcion AS tipopago,
+		tr.descripcion AS tipo_recibo,
+		tr.canjeado AS canjeable,
+		r.idsucursal,
+		r.estado
+	   FROM venta.reciboingreso r
+		 JOIN general.moneda m ON m.idmoneda = r.idmoneda
+		 JOIN venta.tipopago t ON t.idtipopago = r.idtipopago
+		 JOIN credito.tipo_recibo tr ON tr.idtipo_recibo = r.idtipo_recibo
+		 JOIN venta.tipo_documento td ON td.idtipodocumento = r.idtipodocumento;
+
+	ALTER TABLE venta.reciboingreso_canje_view
+	  OWNER TO postgres;
+
+
+-- cambiando tipo de dato en la tabla amortizacion
+ALTER TABLE credito.amortizacion ALTER COLUMN serie TYPE character varying(6);
+
+-- añandiendo parametro para ver si la empresa mostrara pos productos sus respectiva imagen
+INSERT INTO seguridad.param VALUES ('mostrar_imagen_producto', 'S', 'Parametro para mostrar las imagenes de los productos', 'A');
+----------------------------------------------------- 29/08/2016 --------------------------------------------------
+
+
+----------------------------------------------------- 01/09/2016 --------------------------------------------------
+--añadiendo parametro para mostrar el tipo de pago en pago a proveedor
+alter table venta.tipopago add column mostrar_en_pagoproveedor character(1);
+
+----------------------------------------------------- 05/09/2016 --------------------------------------------------
+--vista para pagos de letras
+	CREATE OR REPLACE VIEW compra.pago_compra_view AS 
+	SELECT 
+	pc.idpagocompra
+	, pc.letra
+	,pc.monto
+	,to_char(pc.fecha::timestamp with time zone, 'DD/MM/YYYY'::text) fecha_pago
+	,pc.cambio_moneda
+	,p.nombre razonsocial
+	,(td.abreviatura||' '||c.serie||'-'||c.numero) comprobante
+	,m.abreviatura abreviatura_moneda
+	,m.descripcion moneda
+	FROM compra.pago_compra pc
+	JOIN compra.compra c ON c.idcompra=pc.idcompra
+	JOIN venta.tipo_documento td ON td.idtipodocumento=c.idtipodocumento
+	JOIN general.moneda m ON m.idmoneda=c.idmoneda
+	JOIN compra.proveedor p ON p.idproveedor=c.idproveedor;
+
+	ALTER TABLE compra.pago_compra_view
+	  OWNER TO postgres;
+	  
+	-- vista para listar las letras para pagos a proveedor
+	CREATE OR REPLACE VIEW compra.cronograma_pago_view AS 
+	 SELECT cp.idcompra,
+		cp.letra,
+		cp.monto_letra,
+		to_char(c.fecha_compra::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_emision,
+		to_char(cp.fecha_vencimiento::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_vencimiento,
+		to_char(cp.fecha_pago::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_pago,
+		cp.saldo,
+		cp.cancelado,
+		p.nombre AS razonsocial,
+		(((td.abreviatura::text || ' '::text) || c.serie::text) || '-'::text) || c.numero::text AS comprobante,
+		m.abreviatura AS abreviatura_moneda,
+		m.descripcion AS moneda,
+		cp.estado,
+		c.idproveedor
+		,cp.idmoneda
+	   FROM compra.cronograma_pago cp
+		 JOIN compra.compra c ON c.idcompra = cp.idcompra
+		 JOIN venta.tipo_documento td ON td.idtipodocumento = c.idtipodocumento
+		 JOIN general.moneda m ON m.idmoneda = c.idmoneda
+		 JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+	  ORDER BY cp.letra, cp.idcompra;
+
+	ALTER TABLE compra.cronograma_pago_view
+	  OWNER TO postgres;
+	  
+----------------------------------------------------- 06/09/2016 -----------------------------------------------------------------------------
+-- añadiendo campos necesarios para pagar con nota d credito
+ALTER TABLE compra.pago_compra ADD COLUMN monto_notacredito numeric(10,2) DEFAULT 0;
+ALTER TABLE compra.pago_compra ADD COLUMN doc_notacredito character varying(100);
+
+-- añadindo a la vista los nuevos campos 
+	
+CREATE OR REPLACE VIEW compra.pago_compra_view AS 
+ SELECT pc.idpagocompra,
+  pc.idcompra,
+    pc.letra,
+    pc.monto AS monto_letra,
+    to_char(pc.fecha::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_pago,
+    pc.cambio_moneda,
+    p.nombre AS razonsocial,
+    (((td.abreviatura::text || ' '::text) || c.serie::text) || '-'::text) || c.numero::text AS comprobante,
+    m.abreviatura AS abreviatura_moneda,
+    m.descripcion AS moneda,
+    pc.monto_notacredito,
+    pc.doc_notacredito,
+	pc.idmoneda,
+    pc.estado
+   FROM compra.pago_compra pc
+     JOIN compra.compra c ON c.idcompra = pc.idcompra
+     JOIN venta.tipo_documento td ON td.idtipodocumento = c.idtipodocumento
+     JOIN general.moneda m ON m.idmoneda = c.idmoneda
+     JOIN compra.proveedor p ON p.idproveedor = c.idproveedor;
+
+ALTER TABLE compra.pago_compra_view
+  OWNER TO postgres;
+
+
+
+	  
+----------------------------------------------------- 07/09/2016 -----------------------------------------------------------------------------
+	  -- añadiendo campo para el concepto movimiento en pagos a proveedor
+	  alter table caja.conceptomovimiento add column ver_pagoproveedor character(1);
+	  
+----------------------------------------------------- 14/09/2016 -----------------------------------------------------------------------------
+-- imagen principal del producto 
+ALTER TABLE compra.producto ADD COLUMN imagen_producto character varying(200);
+
+-- tabla para guardar las imagenes de los productos
+CREATE TABLE compra.producto_imagen
+(
+  idproducto_imagen serial NOT NULL,
+  idproducto integer,
+  imagen_producto character varying(200),
+  es_principal character(1) DEFAULT 'N'::bpchar,
+  estado character(1),
+  CONSTRAINT pk_imagenesproducto PRIMARY KEY (idproducto_imagen )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE compra.producto_imagen
+  OWNER TO postgres;
+  
+-- vista para ver la grilla del stock(OJO, ESTA VISTA NO ES LA PRINCIPAL, ES provicional para hacer pruebas)
+CREATE OR REPLACE VIEW almacen.view_stock AS 
+ SELECT d.idproducto, sum(d.cantidad::double precision * u.cantidad_unidad_min * d.tipo_number::double precision) AS stock
+ , producto.descripcion AS producto, producto.descripcion_detallada AS producto_detallado, marca.descripcion AS marca
+ , modelo.descripcion AS modelo, color.descripcion AS color, unidad.descripcion AS unidad_medida, marca.idmarca
+ , modelo.idmodelo, color.idcolor, producto.imagen_producto, sum(COALESCE(d.precio_costo, 0::double precision)) AS precio_costo
+ , sum(COALESCE(d.precio_venta, 0::double precision)) AS precio_venta, categoria.descripcion AS categoria
+ , COALESCE(COALESCE(producto.peso, ''::character varying), '0'::character varying) AS peso, COALESCE(tamanio.descripcion, '0'::character varying) AS tamanio
+ , producto.codigo_barras
+ ,producto.idcategoria
+ ,d.idalmacen
+   FROM almacen.detalle_almacen d
+   JOIN compra.producto_unidad u ON u.idproducto = d.idproducto AND u.idunidad = d.idunidad
+   JOIN compra.producto ON producto.idproducto = d.idproducto
+   JOIN compra.unidad ON unidad.idunidad = u.idunidad
+   JOIN general.marca ON marca.idmarca = producto.idmarca
+   JOIN general.modelo ON modelo.idmodelo = producto.idmodelo
+   JOIN general.color ON color.idcolor = producto.idcolor
+   JOIN general.categoria ON categoria.idcategoria = producto.idcategoria
+   LEFT JOIN general.tamanio ON tamanio.idtamanio = producto.idtamanio
+  WHERE d.estado = 'A'::bpchar
+  GROUP BY d.idproducto, producto.descripcion, producto.descripcion_detallada, unidad.descripcion, marca.descripcion, modelo.descripcion, color.descripcion, marca.idmarca
+  , modelo.idmodelo, color.idcolor, producto.imagen_producto, categoria.descripcion, producto.peso, tamanio.descripcion, producto.codigo_barras
+   ,producto.idcategoria
+ ,d.idalmacen;
+
+ALTER TABLE almacen.view_stock
+  OWNER TO postgres;
+  
+  
+------------------------------------------------ 20/09/2016 -------------------------------------------------------------
+-- corrigiendo la vista de clientes
+DROP VIEW venta.cliente_view;
+
+CREATE OR REPLACE VIEW venta.cliente_view AS 
+ SELECT c.idcliente, btrim(COALESCE(c.apellidos::text || ' '::text,'') || c.nombres::text) AS cliente, c.dni, c.ruc, c.cliente_email
+ , c.tipo, c.foto, c.especial
+ 
+ , count(cred.idcredito) AS cant_cred, c.estado, 
+        CASE
+            WHEN c.tipo = 'J'::bpchar THEN 'RUC: '::text || c.ruc::text
+            ELSE 'DNI: '::text || c.dni::text
+        END AS documento_cliente, 
+        CASE
+            WHEN c.tipo = 'N'::bpchar THEN 'NATURAL'::text
+            ELSE 'JURIDICO'::text
+        END AS tipo_cliente
+   FROM venta.cliente c
+   LEFT JOIN venta.cliente_telefono ct ON ct.idcliente = c.idcliente
+  
+   LEFT JOIN credito.credito cred ON cred.idcliente = c.idcliente
+  GROUP BY c.idcliente, c.apellidos, c.nombres, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, c.estado;
+
+ALTER TABLE venta.cliente_view
+  OWNER TO postgres;
+
+  
+--------------------------------------------- 23/09/2016 ---------------------------------------
+-- añadiendo orden en detalle boton
+alter table seguridad.detalle_boton add column orden integer;
+
+
+--------------------------------------------- 06/10/2016 ---------------------------------------
+-- vista para mi reporte de compra
+CREATE OR REPLACE VIEW compra.compra_detalle_view AS 
+ SELECT dc.idcompra, prod.descripcion_detallada AS producto, u.descripcion AS unidadmedida, date(c.fecha_compra) AS fecha_operacion, p.nombre AS proveedor, tp.descripcion AS tipopago, suc.descripcion AS sucursal, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen, c.numero, c.serie, c.idproveedor, c.idsucursal, c.idtipoventa, c.idtipodocumento, c.idmoneda, c.idtipopago, c.estado, c.nroguias, c.subtotal AS subtotal_compra, c.igv AS igv_compra, c.descuento AS descuento_compra, td.abreviatura AS simbolo_tipodoc, dc.idproducto, prod.idlinea, prod.idmodelo, prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dc.precio AS precio_detalle, dc.igv AS igv_detalle, dc.flete AS flete_detalle, dc.gastos AS gastos_detalle, dc.cantidad AS cantidad_detalle, c.cambio_moneda
+,(COALESCE(dc.cantidad,0)*(dc.precio+dc.igv)) subtotal
+
+   FROM compra.detalle_compra dc
+   JOIN compra.compra c ON c.idcompra = dc.idcompra
+   JOIN compra.producto prod ON prod.idproducto = dc.idproducto
+   JOIN compra.unidad u ON u.idunidad = dc.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = c.idtipodocumento
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   JOIN seguridad.sucursal suc ON suc.idsucursal = c.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = c.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = c.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = c.idtipopago;
+
+ALTER TABLE compra.compra_detalle_view
+  OWNER TO postgres;
+
+
+  
+  
+  
+  
+-- vista para la cabecera de reporte caja
+CREATE OR REPLACE VIEW compra.compra_head_view AS 
+SELECT
+idcompra
+,fecha_operacion
+,proveedor
+,tipopago
+,sucursal
+,tipoventa
+,moneda
+msimbolo
+,abreviatura
+,tipodocumento
+,almacen
+,serie
+,numero
+,idproveedor
+,idsucursal
+,idtipoventa
+,idtipodocumento
+,idtipopago
+,estado
+,nroguias
+,subtotal_compra
+,igv_compra
+,descuento_compra
+,simbolo_tipodoc
+,idmoneda
+FROM compra.compra_detalle_view
+GROUP BY idcompra
+,fecha_operacion
+,proveedor
+,tipopago
+,sucursal
+,tipoventa
+,moneda
+,simbolo
+,abreviatura
+,tipodocumento
+,almacen
+,serie
+,numero
+,idproveedor
+,idsucursal
+,idtipoventa
+,idtipodocumento
+,idtipopago
+,estado
+,nroguias
+,subtotal_compra
+,igv_compra
+,descuento_compra
+,simbolo_tipodoc
+,idmoneda;
+ALTER TABLE compra.compra_head_view
+  OWNER TO postgres;
+  
+  
+  
+------------------------------------------ 08/10/2016 ---------------------------------------
+--añadiendo campo canjeado en la vista de R. ingreso
+CREATE OR REPLACE VIEW venta.reciboingreso_view AS 
+	 SELECT r.idreciboingreso,
+		r.serie,
+		r.numero,
+		r.idcliente,
+		r.monto,
+		r.idmoneda,
+		r.tipocambio,
+		r.fecha,
+		r.hora,
+		r.concepto,
+		r.idtipopago,
+		r.idamortizacion,
+		r.idusuario,
+		r.idsucursal,
+		r.tipo_ingreso,
+		r.idconceptomovimiento,
+		r.idtipodocumento_ref,
+		r.idtipodocumento,
+		r.serie_doc,
+		r.numero_doc,
+		r.estado,
+		c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente,
+		(r.serie::text || '-'::text) || r.numero::text AS recibo
+		,r.canjeado
+	   FROM venta.reciboingreso r
+		 JOIN venta.cliente c ON c.idcliente = r.idcliente;
+
+	ALTER TABLE venta.reciboingreso_view
+	  OWNER TO postgres;
+
+	  
+------------------------------------------ 10/10/2016 ---------------------------------------
+-- mi vista para el reporte de recibos egreso
+CREATE OR REPLACE VIEW venta.recibo_egreso_view AS 
+SELECT r.idreciboegreso
+,r.serie
+,r.numero
+,r.tabla
+,r.monto
+,r.concepto
+,r.fecha
+,(COALESCE(cl.apellidos||' ','')||COALESCE(cl.nombres,'')) entidad
+,to_char(r.fecha,'DD/MM/YYYY') fecha_operacion
+,m.descripcion moneda
+,m.abreviatura
+,m.simbolo
+,tp.descripcion tipopago
+,u.usuario cajero
+,s.descripcion sucursal
+,tr.descripcion tiporecibo
+,r.idmoneda
+,r.idusuario
+,r.idpersona
+,r.idsucursal
+,(r.serie||'-'||r.numero) nro_recibo
+,(td.descripcion ||' '||r.serie_doc||'-'||r.numero_doc) doc_referencia
+,r.tipocambio
+,r.estado
+FROM venta.reciboegreso r
+JOIN venta.cliente cl ON cl.idcliente=r.idpersona AND r.tabla='CLIENTE'
+JOIN general.moneda m ON m.idmoneda=r.idmoneda
+JOIN venta.tipopago tp ON tp.idtipopago=r.idtipopago
+JOIN seguridad.usuario u ON u.idusuario = r.idusuario
+JOIN seguridad.sucursal s ON s.idsucursal=r.idsucursal
+JOIN credito.tipo_recibo tr ON tr.idtipo_recibo=r.idtipo_recibo
+LEFT JOIN venta.tipo_documento td ON td.idtipodocumento=r.idtipodocumento_ref
+UNION
+SELECT r.idreciboegreso
+,r.serie
+,r.numero
+,r.tabla
+,r.monto
+,r.concepto
+,r.fecha
+,(COALESCE(e.appat||' '||e.apmat||' ','')||COALESCE(e.nombres,'')) entidad
+,to_char(r.fecha,'DD/MM/YYYY') fecha_operacion
+,m.descripcion moneda
+,m.abreviatura
+,m.simbolo
+,tp.descripcion tipopago
+,u.usuario cajero
+,s.descripcion sucursal
+,tr.descripcion tiporecibo
+,r.idmoneda
+,r.idusuario
+,r.idpersona
+,r.idsucursal
+,(r.serie||'-'||r.numero) nro_recibo
+,(td.descripcion ||' '||r.serie_doc||'-'||r.numero_doc) doc_referencia
+,r.tipocambio
+,r.estado
+FROM venta.reciboegreso r
+JOIN general.moneda m ON m.idmoneda=r.idmoneda
+JOIN venta.tipopago tp ON tp.idtipopago=r.idtipopago
+JOIN seguridad.usuario u ON u.idusuario = r.idusuario
+JOIN seguridad.usuario e ON e.idusuario = r.idpersona AND r.tabla='USUARIO'
+JOIN seguridad.sucursal s ON s.idsucursal=r.idsucursal
+JOIN credito.tipo_recibo tr ON tr.idtipo_recibo=r.idtipo_recibo
+LEFT JOIN venta.tipo_documento td ON td.idtipodocumento=r.idtipodocumento_ref;
+
+
+ALTER TABLE venta.recibo_egreso_view
+  OWNER TO postgres;
+
+  
+  
+  
+  
+------------------------------- 30/10/2016 -----------------------------------------
+-- creando VISTA para el reporte de ventas con detalle
+CREATE OR REPLACE VIEW venta.venta_detalle_view AS 
+ SELECT dv.idventa, dv.descripcion AS producto, u.descripcion AS unidadmedida, v.fecha_venta AS fecha_operacion, COALESCE(cli.nombres::text || ' '::text, ''::text) || COALESCE(cli.apellidos, ''::character varying)::text AS cliente, tp.descripcion AS tipopago, suc.descripcion AS sucursal, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen, v.correlativo AS numero, v.serie, v.idcliente, v.idsucursal, v.idtipoventa, v.idtipodocumento, v.idmoneda, v.idtipopago, v.estado, v.subtotal AS subtotal_venta, v.igv AS igv_venta, v.descuento AS descuento_venta, td.abreviatura AS simbolo_tipodoc, dv.idproducto, prod.idlinea, prod.idmodelo, prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dv.precio AS precio_venta_detalle, dv.costo AS precio_costo_detalle, dv.cantidad AS cantidad_detalle, v.cambio_moneda, COALESCE(dv.cantidad, 0)::numeric::double precision * dv.precio AS subtotal
+,v.idvendedor
+,(COALESCE(emp.nombres||' ','')||COALESCE(emp.appat||' ','')||COALESCE(emp.apmat,'')) vendedor
+   FROM venta.detalle_venta dv
+   JOIN venta.venta v ON v.idventa = dv.idventa
+   JOIN compra.producto prod ON prod.idproducto = dv.idproducto
+   JOIN compra.unidad u ON u.idunidad = dv.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN venta.cliente cli ON cli.idcliente = v.idcliente
+   JOIN seguridad.sucursal suc ON suc.idsucursal = v.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = v.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = v.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = v.idtipopago
+   JOIN seguridad.usuario emp ON emp.idusuario=v.idvendedor
+   ;
+
+
+
+-- vista cabecera de venta para reportes
+CREATE OR REPLACE VIEW venta.venta_head_view AS 
+ SELECT venta_detalle_view.idventa, venta_detalle_view.fecha_operacion, btrim(venta_detalle_view.cliente) AS cliente, venta_detalle_view.tipopago, venta_detalle_view.sucursal, venta_detalle_view.tipoventa, venta_detalle_view.moneda AS msimbolo, venta_detalle_view.abreviatura, venta_detalle_view.tipodocumento, venta_detalle_view.almacen, venta_detalle_view.serie, venta_detalle_view.numero, venta_detalle_view.idcliente, venta_detalle_view.idsucursal, venta_detalle_view.idtipoventa, venta_detalle_view.idtipodocumento, venta_detalle_view.idtipopago, venta_detalle_view.estado, venta_detalle_view.subtotal_venta, venta_detalle_view.igv_venta, venta_detalle_view.simbolo_tipodoc, venta_detalle_view.idmoneda
+,vendedor,idvendedor
+   FROM venta.venta_detalle_view
+  GROUP BY venta_detalle_view.idventa, venta_detalle_view.fecha_operacion, venta_detalle_view.cliente, venta_detalle_view.tipopago, venta_detalle_view.sucursal, venta_detalle_view.tipoventa, venta_detalle_view.moneda, venta_detalle_view.simbolo, venta_detalle_view.abreviatura, venta_detalle_view.tipodocumento, venta_detalle_view.almacen, venta_detalle_view.serie, venta_detalle_view.numero, venta_detalle_view.idcliente, venta_detalle_view.idsucursal, venta_detalle_view.idtipoventa, venta_detalle_view.idtipodocumento, venta_detalle_view.idtipopago, venta_detalle_view.estado, venta_detalle_view.subtotal_venta, venta_detalle_view.igv_venta, venta_detalle_view.simbolo_tipodoc, venta_detalle_view.idmoneda,vendedor,idvendedor;
+
+ALTER TABLE venta.venta_head_view
+OWNER TO postgres;
+
+
+
+-- vista de usuario , añadiendo el nombre para los reportes de usuario o vendedor
+CREATE OR REPLACE VIEW seguridad.view_usuario AS 
+ SELECT u.idusuario, u.nombres, u.appat, u.apmat, u.usuario, u.clave, u.direccion, u.email, u.fecha_nac, u.sexo, u.avatar, u.fecha_registro, u.estado, (u.appat::text || ' '::text) || u.apmat::text AS apellidos
+,btrim(COALESCE(u.nombres||' ','')||COALESCE(u.appat||' ','')||COALESCE(u.apmat||' ','')) user_nombres
+   FROM seguridad.usuario u
+  ORDER BY u.usuario;
+
+ALTER TABLE seguridad.view_usuario
+  OWNER TO postgres;
+  
+  
+  
+  
+  
+  
+----------------------------- 01/11/2016 -------------------------------
+-- añadiendo campos necesarios para el reporte de seguimiento serie
+CREATE OR REPLACE VIEW venta.notacredito_view AS 
+ SELECT n.idnotacredito, n.fecha, (n.serie::text || '-'::text) || n.numero::text AS nrodocumento, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, n.subtotal, n.igv, n.subtotal + n.igv AS total, n.motivo, (((t.abreviatura::text || ' '::text) || n.serie_ref::text) || '-'::text) || n.numero_ref::text AS tipodoc_ref, n.estado, n.idsucursal, n.idusuario, n.idmoneda, m.descripcion AS moneda, t.descripcion AS tipo_documento_ref, c.dni, c.ruc
+,n.idtipodocumento,n.idventa
+   FROM venta.notacredito n
+   JOIN venta.cliente c ON c.idcliente = n.idcliente
+   JOIN venta.tipo_documento t ON t.idtipodocumento = n.iddocumento_ref
+   JOIN general.moneda m ON m.idmoneda = n.idmoneda;
+
+ALTER TABLE venta.notacredito_view
+  OWNER TO postgres;
+  
+-- añadiendo campos necesarios para el reporte de seguimiento serie
+CREATE OR REPLACE VIEW almacen.guia_remision_view AS 
+ SELECT g.idguia_remision, (g.serie::text || '-'::text) || g.numero::text AS nroguia, g.fecha_traslado, m.descripcion AS motivo, g.destinatario, g.ruc_destinatario, g.dni_destinatario, g.punto_partida, g.punto_llegada, g.idsucursal, g.estado, g.finalizado, g.tipo_guia
+,g.idtipodocumento
+   FROM almacen.guia_remision g
+   JOIN almacen.motivo_guia m ON m.idmotivo_guia = g.idmotivo_guia;
+
+ALTER TABLE almacen.guia_remision_view
+  OWNER TO postgres;
+
+  
+-- añadiendo campos necesarios para el reporte de seguimiento serie
+CREATE OR REPLACE VIEW compra.compra_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, t.descripcion AS tipo_documento, COALESCE(c.serie::text || '-'::text, ''::text) || c.numero::text AS nrodocumento, c.subtotal, c.igv, c.subtotal + c.igv AS total, c.estado, c.recepcionado, c.fecha_compra, to_char(c.fecha_compra::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idsucursal, p.ruc, c.idalmacen
+,c.idtipodocumento
+   FROM compra.compra c
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+ALTER TABLE compra.compra_view
+  OWNER TO postgres;
+
+
+  
+-------------------------------------------- 10/11/2016 ----------------------------------------------
+-- la tabla para las plantillas de impresion
+CREATE TABLE general.formato_documento
+(
+  idtipodocumento integer NOT NULL,
+  idsucursal integer NOT NULL,
+  serie character varying(10) NOT NULL,
+  contenido text,
+  width character varying(80),
+  height character varying(80),
+  font_size character varying(30),
+  estado character(1),
+  CONSTRAINT pk_fomat_comprobante PRIMARY KEY (idtipodocumento , idsucursal , serie )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE general.formato_documento
+  OWNER TO postgres;
+  
+  
+-- tabla para las etiquetas de los formatos de impresion
+
+CREATE TABLE general.etiqueta
+(
+  idetiqueta serial NOT NULL,
+  label_impresion character varying(150),
+  etiqueta character varying(150),
+  estado character(1),
+  CONSTRAINT pk_etiqueta PRIMARY KEY (idetiqueta )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE general.etiqueta
+  OWNER TO postgres;
+  
+  
+  
+------------------------------------------------- 12/11/2016 ----------------------------------------------
+-- añadiendo este campo para guardar la cantidad de filas que tendra el detalle del formato seleccionado
+alter table general.formato_documento add column cantidad_filas_detalle integer;
+
+-- para saber que anchura tendra la celda del detalle
+alter table general.formato_documento add column ancho_celda_detalle character varying(10);
+alter table general.formato_documento add column fuente_letra character varying(200);
+
+------------------------------------------------- 13/11/2016 ----------------------------------------------
+-- ver los bordes para ver como va la impresion S/N
+alter table general.formato_documento add column ver_borde character(1) DEFAULT 'N' ;
+
+
+
+
+--------------------------------------------------- 18/11/2016 ---------------------------------------------------
+-- añadiendo abreviatura de la moneda en las preventas
+CREATE OR REPLACE VIEW venta.preventa_view AS 
+ SELECT p.idpreventa, p.idcliente, p.idsucursal, p.idtipoventa, p.idusuario, p.fecha, p.estado, p.idtipodocumento, p.idalmacen, p.subtotal, p.valor_igv, p.igv, p.descuento, p.idvendedor, p.idmoneda, p.pendiente, tv.descripcion AS tipoventa, td.descripcion AS tipodocumento, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, u.nombres AS vendedor, m.descripcion AS moneda, p.subtotal + p.igv - p.descuento AS total, p.serie, m.abreviatura AS moneda_abreviatura
+   FROM venta.preventa p
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = p.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = p.idtipodocumento
+   JOIN venta.cliente c ON c.idcliente = p.idcliente
+   JOIN seguridad.usuario u ON u.idusuario = p.idvendedor
+   JOIN general.moneda m ON m.idmoneda = p.idmoneda;
+
+ALTER TABLE venta.preventa_view
+  OWNER TO postgres;
+
+  
+  
+--------------------------------------------------- 21/11/2016 ---------------------------------------------------
+-- Añadiendo capo idtipo_recibo en la vista, es necesario para editar
+CREATE OR REPLACE VIEW venta.reciboingreso_view AS 
+ SELECT r.idreciboingreso, r.serie, r.numero, r.idcliente, r.monto, r.idmoneda, r.tipocambio, r.fecha, r.hora, r.concepto, r.idtipopago, r.idamortizacion, r.idusuario, r.idsucursal, r.tipo_ingreso, r.idconceptomovimiento, r.idtipodocumento_ref, r.idtipodocumento, r.serie_doc, r.numero_doc, r.estado, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, (r.serie::text || '-'::text) || r.numero::text AS recibo, r.canjeado, COALESCE(c.apellidos::text, ''::text) || c.nombres::text AS cliente_x_apellidos, u.usuario AS cajero, m.descripcion AS moneda, m.abreviatura AS abrev_moneda, m.simbolo AS simbolo_moneda, tp.descripcion AS tipopago
+,r.idtipo_recibo
+   FROM venta.reciboingreso r
+   JOIN venta.cliente c ON c.idcliente = r.idcliente
+   JOIN general.moneda m ON m.idmoneda = r.idmoneda
+   JOIN venta.tipopago tp ON tp.idtipopago = r.idtipopago
+   JOIN seguridad.usuario u ON u.idusuario = r.idusuario;
+
+ALTER TABLE venta.reciboingreso_view
+  OWNER TO postgres;
+  
+  
+  
+  
+--------------------------------------------------- 28/11/2016 ---------------------------------------------------
+-- agregar campo para la anulacion de la guia remision
+ALTER TABLE almacen.guia_remision ADD COLUMN motivo_anulacion text;
+ALTER TABLE almacen.guia_remision ADD COLUMN fecha_hora_anulacion timestamp without time zone;
+ALTER TABLE almacen.guia_remision ADD COLUMN idusuario_anulacion integer;
+
+
+
+--------------------------------------------------- 30/11/2016 ---------------------------------------------------
+-- campos para la fact. electronicas
+ALTER TABLE venta.tipo_documento ADD COLUMN ruc_obligatorio  character(1) default 'N';
+ALTER TABLE venta.tipo_documento ADD COLUMN dni_obligatorio  character(1) default 'N';
+
+-- direccion en cliente
+ALTER TABLE venta.cliente ADD COLUMN direccion  text;
+
+
+-- añadiendo campos en la vista para el formato de f.electornic
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento
+ , v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda
+ , c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta
+ , td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante
+ , m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format
+ , c.ruc
+ , c.dni
+  ,(CASE WHEN td.dni_obligatorio = 'S' THEN c.dni ELSE (CASE WHEN td.ruc_obligatorio='S' THEN c.ruc ELSE '' END) END ) doc_cliente_facturacion_electronica
+,td.dni_obligatorio
+,td.ruc_obligatorio
+,c.direccion
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+
+-- 11:40 pm 
+-- para la nota de credito, la cantidad de integer a decimal
+ALTER TABLE venta.detalle_notacredito ALTER COLUMN cantidad TYPE double precision;
+
+ALTER TABLE venta.cliente ADD COLUMN direccion_principal text;
+-- 11:57 pm 
+CREATE OR REPLACE VIEW venta.notacredito_view AS 
+ SELECT n.idnotacredito, n.fecha, (n.serie::text || '-'::text) || n.numero::text AS nrodocumento
+ , c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, n.subtotal
+ , n.igv, n.subtotal + n.igv AS total, n.motivo
+ , (((t.abreviatura::text || ' '::text) || n.serie_ref::text) || '-'::text) || n.numero_ref::text AS tipodoc_ref, n.estado
+ , n.idsucursal, n.idusuario, n.idmoneda, m.descripcion AS moneda
+ , t.descripcion AS tipo_documento_ref
+ , c.dni
+ , c.ruc
+ , to_char(n.fecha,'DD/MM/YYYY') fecha_venta_format
+ ,n.serie
+ ,n.numero
+  ,n.numero correlativo
+  ,c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) full_nombres
+  ,c.direccion_principal direccion
+  ,t.descripcion documento_modifica
+  ,(n.serie_ref||'-'||n.numero_ref) comprobante_modifica
+   FROM venta.notacredito n
+   JOIN venta.cliente c ON c.idcliente = n.idcliente
+   JOIN venta.tipo_documento t ON t.idtipodocumento = n.iddocumento_ref
+   JOIN general.moneda m ON m.idmoneda = n.idmoneda;
+
+ALTER TABLE venta.notacredito_view
+  OWNER TO postgres;
+
+  
+-- 11:59 pm 
+-- para k acepte ceros en los correlativos
+ALTER TABLE venta.serie_documento ALTER COLUMN correlativo TYPE character varying(10);
+
+
+
+
+------------------------------------------------------- 01/12/2016 -------------------------------------------------------
+-- atributo para mostrar en venta
+ALTER TABLE almacen.almacen ADD COLUMN mostrar_en_venta character default 'N';
+
+
+
+------------------------------------------------------- 06/12/2016 -------------------------------------------------------
+-- para parametrizar la edicion del correlativo en ventas
+INSERT INTO seguridad.param VALUES ('editar_correlativo_v', 'S', 'Parametro para editar el correlativo en ventas', 'A');
+
+------------------------------------------------------- 08/12/2016 -------------------------------------------------------
+-- insertamos la dimencion de los campos DNI y Ruc
+INSERT INTO seguridad.param VALUES ('long_dni', '8', 'LONGITUD DEL CAMPO DNI( DIGITOS)', 'A');
+INSERT INTO seguridad.param VALUES ('long_ruc', '11', 'LONGITUD DEL CAMPO RUC( DIGITOS)', 'A');
+
+-- añadiendo campos para la validacion de los tipo de documento, para no depender de los pk
+ALTER TABLE venta.tipo_documento ADD COLUMN ruc_obligatorio  character(1) default 'N';
+ALTER TABLE venta.tipo_documento ADD COLUMN dni_obligatorio  character(1) default 'N';
+
+
+------------------------------------------------------- 09/12/2016 -------------------------------------------------------
+-- añadiendo doc cliente en vista d preventa
+CREATE OR REPLACE VIEW venta.preventa_view AS 
+ SELECT p.idpreventa, p.idcliente, p.idsucursal, p.idtipoventa, p.idusuario, p.fecha, p.estado, p.idtipodocumento, p.idalmacen, p.subtotal, p.valor_igv, p.igv, p.descuento, p.idvendedor, p.idmoneda, p.pendiente, tv.descripcion AS tipoventa, td.descripcion AS tipodocumento, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, u.nombres AS vendedor, m.descripcion AS moneda, p.subtotal + p.igv - p.descuento AS total, p.serie, c.dni, c.ruc
+,td.ruc_obligatorio,td.dni_obligatorio
+   FROM venta.preventa p
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = p.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = p.idtipodocumento
+   JOIN venta.cliente c ON c.idcliente = p.idcliente
+   JOIN seguridad.usuario u ON u.idusuario = p.idvendedor
+   JOIN general.moneda m ON m.idmoneda = p.idmoneda;
+
+ALTER TABLE venta.preventa_view
+  OWNER TO postgres;
+  
+  
+-- parametrizando si la venta se realiza con validacion de linea de credito S/N
+INSERT INTO seguridad.param VALUES ('venta_con_linea', 'N', 'Parametro para determinar si la venta se realiza con validacion de linea de credito', 'A');
+
+
+
+-------------------------------------------------- 11/12/2016 -------------------------------------------------------
+-- vista para ver los proveedores que tienen deudas cancenadas o pagadas
+CREATE OR REPLACE VIEW compra.proveedor_deuda_view AS 
+SELECT 
+DISTINCT p.idproveedor, nombre proveedor 
+,cp.cancelado
+FROM compra.cronograma_pago cp
+JOIN compra.compra c ON c.idcompra=cp.idcompra
+JOIN compra.proveedor p ON p.idproveedor=c.idproveedor
+ORDER BY nombre;
+ALTER TABLE compra.proveedor_deuda_view
+  OWNER TO postgres;
+
+
+-------------------------------------------------- 13/12/2016 -------------------------------------------------------
+-- añadiendo el campo linea_credito para validacion en algunos modulos
+CREATE OR REPLACE VIEW venta.cliente_view AS 
+ SELECT c.idcliente, btrim(COALESCE(c.apellidos::text || ' '::text, ''::text) || c.nombres::text) AS cliente, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, count(cred.idcredito) AS cant_cred, c.estado, 
+        CASE
+            WHEN c.tipo = 'J'::bpchar THEN 'RUC: '::text || c.ruc::text
+            ELSE 'DNI: '::text || c.dni::text
+        END AS documento_cliente, 
+        CASE
+            WHEN c.tipo = 'N'::bpchar THEN 'NATURAL'::text
+            ELSE 'JURIDICO'::text
+        END AS tipo_cliente
+        ,c.linea_credito
+   FROM venta.cliente c
+   LEFT JOIN venta.cliente_telefono ct ON ct.idcliente = c.idcliente
+   LEFT JOIN credito.credito cred ON cred.idcliente = c.idcliente
+  GROUP BY c.idcliente, c.apellidos, c.nombres, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, c.estado;
+
+ALTER TABLE venta.cliente_view
+  OWNER TO postgres;
+
+  
+  
+-- campos para ver la moneda de flete y gastos en compra
+ALTER TABLE compra.compra ADD COLUMN idmoneda_gastos  integer;
+ALTER TABLE compra.compra ADD COLUMN idmoneda_flete  integer;
+
+ALTER TABLE compra.compra ADD COLUMN flete_convertido  numeric(10,2);
+ALTER TABLE compra.compra ADD COLUMN gastos_convertido  numeric(10,2);
+
+
+-------------------------------------------------- 14/12/2016 -------------------------------------------------------
+-- clientes para mi reporte de ventas
+CREATE OR REPLACE VIEW venta.cliente_venta_view AS 
+ SELECT idcliente
+,trim(full_nombres) cliente 
+FROM venta.venta_view v
+WHERE COALESCE(trim(full_nombres),'')<>''
+GROUP BY idcliente,cliente
+ORDER BY cliente;
+
+ALTER TABLE venta.cliente_venta_view
+  OWNER TO postgres;
+  
+-- clientes para mi reporte de credito
+CREATE OR REPLACE VIEW venta.cliente_credito_view AS
+SELECT idcliente,trim(cliente) cliente FROM credito.credito_view cred
+ WHERE COALESCE(btrim(cliente), ''::text) <> ''::text
+  GROUP BY idcliente, btrim(cliente)
+  ORDER BY btrim(cliente);
+ALTER TABLE venta.cliente_credito_view
+  OWNER TO postgres;
+
+-------------------------------------------------- 21/12/2016 -------------------------------------------------------
+-- tabla de hoja ruta para cobranzas
+DROP TABLE cobranza.hoja_ruta;
+
+CREATE TABLE cobranza.hoja_ruta
+(
+  idhoja_ruta serial NOT NULL,
+  idzona integer NOT NULL,
+  idempleado integer NOT NULL,
+  idsucursal integer,
+  idcredito integer,
+  idventa integer,
+  idcobrador integer,
+  idgarante integer,
+  estado character(1),
+  CONSTRAINT pk_hoja_ruta PRIMARY KEY (idhoja_ruta )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE cobranza.hoja_ruta
+  OWNER TO postgres;
+<<<<<<< HEAD
+=======
+
+  
+-------------------------------------------------- 23/12/2016 -------------------------------------------------------
+-- añadiendo campo guias_remision en la vista de venta
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio
+        ,v.guias_remision
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+  
+-------------------------------------------------- 27/12/2016 -------------------------------------------------------
+-- añadiendo campos monedas en notacredito
+alter table general.notacredito add column idmoneda integer;
+ALTER TABLE general.notacredito ADD COLUMN cambio_moneda numeric(10,2);
+
+
+-------------------------------------------------- 11/01/2017 -------------------------------------------------------
+-- delete el default null de la hoja de ruta
+ALTER TABLE cobranza.hoja_ruta ALTER COLUMN idzona DROP NOT NULL;
+
+-- añadiendo campo para mostrar en determinados modulos el valor de la moneda
+ALTER TABLE general.moneda ADD COLUMN mostrar_en_compra  character(1) default 'N';
+ALTER TABLE general.moneda ADD COLUMN mostrar_en_venta  character(1) default 'N';
+ALTER TABLE general.moneda ADD COLUMN mostrar_en_recibo_e  character(1) default 'N';
+ALTER TABLE general.moneda ADD COLUMN mostrar_en_recibo_i  character(1) default 'N';
+ALTER TABLE general.moneda ADD COLUMN mostrar_en_notacredito  character(1) default 'N';
+
+-------------------------------------------------- 12/01/2017 -------------------------------------------------------
+-- añadiendo la direccion en la vista de venta para el facturador y otros reportes de ser necesario
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision
+        ,c.direccion_principal direccion
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+-------------------------------------------------- 12/01/2017 -------------------------------------------------------
+-- datos para el facturador PDF de la nota d credito
+DROP VIEW venta.notacredito_view;
+
+CREATE OR REPLACE VIEW venta.notacredito_view AS 
+ SELECT n.idnotacredito, n.fecha, (n.serie::text || '-'::text) || n.numero::text AS nrodocumento
+ , c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente
+ , n.subtotal, n.igv, n.subtotal + n.igv AS total, n.descripcion motivo, (((t.abreviatura::text || ' '::text) || n.serie_ref::text) || '-'::text) || n.numero_ref::text AS tipodoc_ref, n.estado, n.idsucursal, n.idusuario, n.idmoneda, m.descripcion AS moneda, t.descripcion AS tipo_documento_ref, c.dni, c.ruc
+,c.direccion_principal direccion
+,n.serie,n.numero,n.numero correlativo
+, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres
+,to_char(n.fecha , 'DD/MM/YYYY') fecha_venta_format
+,venta.tipo_documento AS documento_modifica
+,venta.comprobante AS comprobante_modifica
+   FROM venta.notacredito n
+   JOIN venta.cliente c ON c.idcliente = n.idcliente
+   JOIN venta.tipo_documento t ON t.idtipodocumento = n.iddocumento_ref
+   JOIN venta.venta_view venta ON venta.idventa=n.idventa
+   JOIN general.moneda m ON m.idmoneda = n.idmoneda;
+
+ALTER TABLE venta.notacredito_view
+  OWNER TO postgres;
+  
+  
+  
+-- mejorando vista para filtrar las ventas que ya fueron usadas en una nota de credito
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion
+   ,CASE WHEN COALESCE(CAST(nc.idventa AS text),'')<>'' THEN 'S' ELSE 'N' END con_notacredito
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa=v.idventa AND nc.estado='A' AND v.estado!='I'
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+  
+  
+-------------------------------------------------- 14/01/2017 -------------------------------------------------------
+-- añadiendo campos en la vista de credito para la grilla
+
+CREATE OR REPLACE VIEW credito.credito_view AS 
+ SELECT c.idcredito, c.idsucursal, c.idventa, c.idcliente, (l.nombres::text || ' '::text) || COALESCE(l.apellidos, ''::character varying)::text AS cliente, e.descripcion AS estado_credito, c.nro_credito, c.fecha_credito, c.nro_letras, c.monto_facturado, c.interes, c.monto_credito, c.pagado, c.central_riesgo, c.dias_gracia, c.tasa, c.inicial, c.gastos, c.capital, c.estado, c.idmoneda, m.descripcion AS moneda, (g.nombres::text || ' '::text) || COALESCE(g.apellidos, ''::character varying)::text AS garante
+,v.comprobante
+   FROM credito.credito c
+   JOIN venta.cliente l ON l.idcliente = c.idcliente
+   JOIN credito.estado_credito e ON e.id_estado_credito = c.id_estado_credito
+   LEFT JOIN venta.cliente g ON g.idcliente = c.idgarante
+   JOIN venta.venta_view v ON v.idventa=c.idventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+ALTER TABLE credito.credito_view
+  OWNER TO postgres;
+
+  
+-------------------------------------------------- 16/01/2017 -------------------------------------------------------
+-- añadiendo campos para la hoja de ruta u otros reportes de credito
+CREATE OR REPLACE VIEW credito.credito_view AS 
+ SELECT c.idcredito, c.idsucursal, c.idventa, c.idcliente, (l.nombres::text || ' '::text) || COALESCE(l.apellidos, ''::character varying)::text AS cliente, e.descripcion AS estado_credito, c.nro_credito, c.fecha_credito, c.nro_letras, c.monto_facturado, c.interes, c.monto_credito, c.pagado, c.central_riesgo, c.dias_gracia, c.tasa, c.inicial, c.gastos, c.capital, c.estado, c.idmoneda, m.descripcion AS moneda, (g.nombres::text || ' '::text) || COALESCE(g.apellidos, ''::character varying)::text AS garante, v.comprobante
+,c.id_estado_credito
+,l.direccion_principal direccion
+   FROM credito.credito c
+   JOIN venta.cliente l ON l.idcliente = c.idcliente
+   JOIN credito.estado_credito e ON e.id_estado_credito = c.id_estado_credito
+   LEFT JOIN venta.cliente g ON g.idcliente = c.idgarante
+   JOIN venta.venta_view v ON v.idventa = c.idventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+ALTER TABLE credito.credito_view
+  OWNER TO postgres;
+  
+  
+-- añadiendo campos
+CREATE OR REPLACE VIEW venta.cliente_view AS 
+ SELECT c.idcliente, btrim(COALESCE(c.apellidos::text || ' '::text, ''::text) || c.nombres::text) AS cliente, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, count(cred.idcredito) AS cant_cred, c.estado, 
+        CASE
+            WHEN c.tipo = 'J'::bpchar THEN 'RUC: '::text || c.ruc::text
+            ELSE 'DNI: '::text || c.dni::text
+        END AS documento_cliente, 
+        CASE
+            WHEN c.tipo = 'N'::bpchar THEN 'NATURAL'::text
+            ELSE 'JURIDICO'::text
+        END AS tipo_cliente, c.linea_credito
+        ,zona
+        ,c.idzona
+   FROM venta.cliente c
+   LEFT JOIN venta.cliente_telefono ct ON ct.idcliente = c.idcliente
+   LEFT JOIN credito.credito cred ON cred.idcliente = c.idcliente
+   LEFT JOIN general.zona ON zona.idzona=c.idzona
+  GROUP BY c.idcliente, c.apellidos, c.nombres, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, c.estado,zona,c.idzona;
+
+ALTER TABLE venta.cliente_view
+  OWNER TO postgres;
+  
+  
+  
+-- añadiendo campos
+CREATE OR REPLACE VIEW credito.credito_view AS 
+ SELECT c.idcredito, c.idsucursal, c.idventa, c.idcliente, (l.nombres::text || ' '::text) || COALESCE(l.apellidos, ''::character varying)::text AS cliente, e.descripcion AS estado_credito, c.nro_credito, c.fecha_credito, c.nro_letras, c.monto_facturado, c.interes, c.monto_credito, c.pagado, c.central_riesgo, c.dias_gracia, c.tasa, c.inicial, c.gastos, c.capital, c.estado, c.idmoneda, m.descripcion AS moneda, (g.nombres::text || ' '::text) || COALESCE(g.apellidos, ''::character varying)::text AS garante, v.comprobante, c.id_estado_credito, l.direccion_principal AS direccion
+,v.idvendedor idcobrador
+,zona
+   FROM credito.credito c
+   JOIN venta.cliente l ON l.idcliente = c.idcliente
+   JOIN credito.estado_credito e ON e.id_estado_credito = c.id_estado_credito
+   LEFT JOIN venta.cliente g ON g.idcliente = c.idgarante
+   JOIN venta.venta_view v ON v.idventa = c.idventa
+   LEFT JOIN general.zona ON zona.idzona=l.idzona
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+ALTER TABLE credito.credito_view
+  OWNER TO postgres;
+
+  
+-- mejorando vista para filtrar las ventas que ya fueron usadas en una nota de credito
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion
+   ,CASE WHEN COALESCE(CAST(nc.idventa AS text),'')<>'' THEN 'S' ELSE 'N' END con_notacredito
+   ,COALESCE(vendedor.appat||' ','')||COALESCE(vendedor.apmat||' ','')||COALESCE(vendedor.nombres) vendedor
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa=v.idventa AND nc.estado='A' AND v.estado!='I'
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario=v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+  
+  
+  
+  
+----------------------------------------- 17/01/2017 ------------------------------
+-- parametro para saber el pk del rol cobrador
+INSERT INTO seguridad.param VALUES ('idrolcobrador', '5', 'Este es el pk del rol(tipo empleado) COBRADOR, comparar con la tabla general.tipoempleado', 'A');
+INSERT INTO seguridad.param VALUES ('idperfilcobrador', '4', 'Este es el pk del perfil COBRADOR, comparar con la tabla general.tipoempleado', 'A');
+
+ALTER TABLE venta.tipo_documento ADD COLUMN mostrar_en_cobranzas  character(1) default 'N';
+
+-- añadiendo comentario para dar a entender que valor se va en el atributo
+--COMMENT ON COLUMN cobranza.hoja_ruta.idempleado IS 'Este es el vendedor';
+
+COMMENT ON COLUMN cobranza.hoja_ruta.orden IS 'Este es el orden de las zonas';
+ALTER TABLE cobranza.hoja_ruta ADD COLUMN orden_item integer;
+COMMENT ON COLUMN cobranza.hoja_ruta.orden_item IS 'Este es el orden de los clientes';
+
+
+----------------------------------------- 18/01/2017 ------------------------------
+-- añadiendo campos
+CREATE OR REPLACE VIEW credito.credito_view AS 
+ SELECT c.idcredito, c.idsucursal, c.idventa, c.idcliente, (l.nombres::text || ' '::text) || COALESCE(l.apellidos, ''::character varying)::text AS cliente, e.descripcion AS estado_credito, c.nro_credito, c.fecha_credito, c.nro_letras, c.monto_facturado, c.interes, c.monto_credito, c.pagado, c.central_riesgo, c.dias_gracia, c.tasa, c.inicial, c.gastos, c.capital, c.estado, c.idmoneda, m.descripcion AS moneda, (g.nombres::text || ' '::text) || COALESCE(g.apellidos, ''::character varying)::text AS garante, v.comprobante, c.id_estado_credito, l.direccion_principal AS direccion
+,COALESCE(h.idcobrador,v.idvendedor) idcobrador
+,zona
+   FROM credito.credito c
+   JOIN venta.cliente l ON l.idcliente = c.idcliente
+   JOIN credito.estado_credito e ON e.id_estado_credito = c.id_estado_credito
+   LEFT JOIN venta.cliente g ON g.idcliente = c.idgarante
+   JOIN venta.venta_view v ON v.idventa = c.idventa
+   LEFT JOIN general.zona ON zona.idzona=l.idzona
+   LEFT JOIN cobranza.hoja_ruta h ON h.idventa=c.idventa AND h.idsucursal=c.idsucursal
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+ALTER TABLE credito.credito_view
+  OWNER TO postgres;
+  
+  
+-- parametrizando los pk de forma de pago de las compras
+INSERT INTO seguridad.param VALUES ('idpago_compra_contado', '1', 'Este es el pk de la forma de pago de compra al contado', 'A');
+INSERT INTO seguridad.param VALUES ('idpago_compra_credito', '2', 'Este es el pk de la forma de pago de compra al credito', 'A');
+
+
+----------------------------------------- 19/01/2017 ------------------------------
+-- añadiendo campos
+CREATE OR REPLACE VIEW venta.cliente_view AS 
+ SELECT c.idcliente, btrim(COALESCE(c.apellidos::text || ' '::text, ''::text) || c.nombres::text) AS cliente, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, count(cred.idcredito) AS cant_cred, c.estado, 
+        CASE
+            WHEN c.tipo = 'J'::bpchar THEN 'RUC: '::text || c.ruc::text
+            ELSE 'DNI: '::text || c.dni::text
+        END AS documento_cliente, 
+        CASE
+            WHEN c.tipo = 'N'::bpchar THEN 'NATURAL'::text
+            ELSE 'JURIDICO'::text
+        END AS tipo_cliente, c.linea_credito, zona.zona, c.idzona, c.direccion_principal AS direccion
+   FROM venta.cliente c
+   LEFT JOIN venta.cliente_telefono ct ON ct.idcliente = c.idcliente
+   LEFT JOIN credito.credito cred ON cred.idcliente = c.idcliente
+   LEFT JOIN general.zona ON zona.idzona = c.idzona
+  GROUP BY c.idcliente, c.apellidos, c.nombres, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, c.estado, zona.zona, c.idzona;
+
+ALTER TABLE venta.cliente_view
+  OWNER TO postgres;
+
+  
+-- para determinar si se muestra o no las ventas al contado en la hoja de ruta
+INSERT INTO seguridad.param VALUES ('ventacontado_hojaruta', 'S', 'Se determina si las ventas al contado tambien se mostraran en las hojas de ruta S/N', 'A');
+
+-- atributo para dar de baja a los empleados, sin poner estado I
+ALTER TABLE seguridad.usuario ADD COLUMN baja  character(1) default 'N';
+
+-- añadiendo comentario
+COMMENT ON COLUMN cobranza.visita.idempleado IS 'Este es el pk del cobrador, idcobrador';
+
+-- añadiendo idventa en las visitas
+ALTER TABLE cobranza.visita ADD COLUMN idventa  integer;
+
+
+
+
+
+---------------------------------------------- 22/02/2017 ----------------------------------------------------
+-- corrigiendo vista venta para mostrar en la facturacion electronica
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento
+ , v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor
+ , v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text) || COALESCE(' '::text|| c.apellidos::text,'') AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv::double precision - v.descuento::double precision AS total
+ , v.con_credito
+ , to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format
+ , c.ruc
+ , c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente
+ , td.ruc_obligatorio
+ , td.dni_obligatorio
+ , v.guias_remision
+ , c.direccion_principal AS direccion, 
+        CASE
+            WHEN COALESCE(nc.idventa::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_notacredito, (COALESCE(vendedor.appat::text || ' '::text, ''::text) || COALESCE(vendedor.apmat::text || ' '::text, ''::text)) || COALESCE(vendedor.nombres)::text AS vendedor
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa = v.idventa AND nc.estado = 'A'::bpchar AND v.estado <> 'I'::bpchar
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario = v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+  
+  
+---------------------------------------------- 01/03/2017 ----------------------------------------------------
+-- añadiendo campo idsucursal en la vista para filtrar en grilla
+CREATE OR REPLACE VIEW caja.detallecaja_view AS 
+ SELECT dc1.iddetalle_caja, dc1.fecha, dc1.hora, tm.descripcion AS tipo, dc1.descripcion, dc1.referencia, abs(dc1.monto)::numeric(10,2) AS monto, (( SELECT sum(dc2.monto) AS sum
+FROM caja.detalle_caja dc2
+          WHERE dc1.iddetalle_caja >= dc2.iddetalle_caja AND dc2.estado = 'A'::bpchar AND dc2.idcaja = dc1.idcaja AND dc2.idmoneda = dc1.idmoneda AND dc1.idsucursal = dc2.idsucursal))::numeric(10,2) AS saldo, dc1.idcaja, m.descripcion AS moneda
+,c.idsucursal
+   FROM caja.detalle_caja dc1
+   JOIN caja.caja c ON c.idcaja=dc1.idcaja
+   JOIN general.moneda m ON m.idmoneda = dc1.idmoneda
+   JOIN caja.conceptomovimiento cm ON cm.idconceptomovimiento = dc1.idconceptomovimiento
+   JOIN caja.tipomovimiento tm ON tm.idtipomovimiento = cm.idtipomovimiento
+  WHERE dc1.estado = 'A'::bpchar;
+
+ALTER TABLE caja.detallecaja_view
+  OWNER TO postgres;
+  
+  
+  
+---------------------------------------------- 02/03/2017 ----------------------------------------------------
+-- añadiendo orden en sistemas
+alter table seguridad.sistema add column orden integer;
+
+
+-- creando vista de modulos
+CREATE OR REPLACE VIEW seguridad.view_modulos AS 
+ SELECT md.idmodulo, md.idsistema, md.idpadre, md.descripcion modulos, md.abreviatura, md.url, md.orden, md.icono, md.fecha_registro, md.estado, s.descripcion sistema, mp.descripcion AS padre, 
+        CASE
+            WHEN md.estado = 'A'::bpchar THEN 'ACTIVO'::text
+            ELSE 'INACTIVO'::text
+        END AS estado_modulo
+   FROM seguridad.modulo md
+   LEFT JOIN seguridad.modulo mp ON mp.idmodulo = md.idpadre
+   JOIN seguridad.sistema s ON s.idsistema = md.idsistema;
+
+ALTER TABLE seguridad.view_modulos
+  OWNER TO postgres;
+
+  
+  
+-- creando vista de modulos padre
+CREATE OR REPLACE VIEW seguridad.view_modulos_padre AS 
+ SELECT vista_modulos.idmodulo AS idpadre, vista_modulos.modulos AS padre, vista_modulos.estado, vista_modulos.idsistema,orden
+   FROM seguridad.view_modulos vista_modulos
+  WHERE COALESCE(vista_modulos.idpadre,0)='0'
+  ORDER BY vista_modulos.padre;
+
+ALTER TABLE seguridad.view_modulos_padre
+  OWNER TO postgres;
+  
+  
+---------------------------------------------- 21/05/2017 ----------------------------------------------------
+--añadiendo atributo para ver si esta bloqueado o no por deuda
+alter table venta.cliente add column bloqueado character(1) DEFAULT 'N';
+
+-- añadiendo el campo "bloqueado" en la vista
+CREATE OR REPLACE VIEW venta.cliente_view AS 
+ SELECT c.idcliente, btrim(COALESCE(c.apellidos::text || ' '::text, ''::text) || c.nombres::text) AS cliente, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, count(cred.idcredito) AS cant_cred, c.estado, 
+        CASE
+            WHEN c.tipo = 'J'::bpchar THEN 'RUC: '::text || c.ruc::text
+            ELSE 'DNI: '::text || c.dni::text
+        END AS documento_cliente, 
+        CASE
+            WHEN c.tipo = 'N'::bpchar THEN 'NATURAL'::text
+            ELSE 'JURIDICO'::text
+        END AS tipo_cliente, c.linea_credito, zona.zona, c.idzona, c.direccion_principal AS direccion
+        ,c.bloqueado
+		,c.limite_credito
+   FROM venta.cliente c
+   LEFT JOIN venta.cliente_telefono ct ON ct.idcliente = c.idcliente
+   LEFT JOIN credito.credito cred ON cred.idcliente = c.idcliente
+   LEFT JOIN general.zona ON zona.idzona = c.idzona
+  GROUP BY c.idcliente, c.apellidos, c.nombres, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, c.estado, zona.zona, c.idzona;
+
+ALTER TABLE venta.cliente_view
+  OWNER TO postgres;
+  
+  
+  
+---------------------------------------------- 22/05/2017 ----------------------------------------------------
+-- añadiendo campo para ver si es super usuario
+alter table seguridad.acceso_empresa add column es_superusuario character(1) DEFAULT 'N';
+
+-- añadiendo parametro para determinar el monto de facturacion y obligar o no datos del cliente en venta
+INSERT INTO seguridad.param VALUES ('min_monto_electr', '300', 'Monto minimo para no obligar datos como DNI, y otros en el facturador electronico, mayor al monto debe ser campos obligatorios del cliente', 'A');
+
+
+---------------------------------------------- 03/06/2017 ----------------------------------------------------
+-- vista preventa
+CREATE OR REPLACE VIEW venta.preventa_view AS 
+ SELECT p.idpreventa, p.idcliente, p.idsucursal, p.idtipoventa, p.idusuario, p.fecha, p.estado, p.idtipodocumento, p.idalmacen, p.subtotal, p.valor_igv, p.igv, p.descuento
+ , p.idvendedor, p.idmecanico, p.idmoneda, p.pendiente, tv.descripcion AS tipoventa, td.descripcion AS tipodocumento
+ , c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, m.descripcion AS moneda, p.subtotal + p.igv - p.descuento AS total, p.serie, m.abreviatura AS moneda_abreviatura, c.dni, c.ruc, td.ruc_obligatorio, td.dni_obligatorio, p.codtipo_operacion
+ , btrim((COALESCE(u.appat::text || ' '::text, ''::text) || u.apmat::text) || ' '::text, ''::text) || u.nombres::text AS vendedor
+ , btrim((COALESCE(us.appat::text || ' '::text, ''::text) || us.apmat::text) || ' '::text, ''::text) || us.nombres::text AS mecanico
+ , COALESCE(ram.descripcion::text,'-') AS rampa
+ , mi.descripcion AS modalidad
+,td.abreviatura td_documento
+,u.nombres::text vendedor_nombre
+,COALESCE(us.nombres::text,'') mecanico_nombre
+   FROM venta.preventa p
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = p.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = p.idtipodocumento
+   JOIN venta.cliente c ON c.idcliente = p.idcliente
+   JOIN seguridad.usuario u ON u.idusuario = p.idvendedor
+   JOIN general.moneda m ON m.idmoneda = p.idmoneda
+   JOIN seguridad.usuario us ON us.idusuario = p.idmecanico
+   JOIN venta.rampa ram ON ram.idrampa = p.idrampa
+   JOIN venta.modalidad_ingreso mi ON mi.idmodalidad = p.idmodalidad;
+
+ALTER TABLE venta.preventa_view
+  OWNER TO postgres;
+
+  
+---------------------------------------------- 16/06/2017 ----------------------------------------------------
+CREATE OR REPLACE VIEW almacen.guia_remision_view AS 
+ SELECT g.idguia_remision, (g.serie::text || '-'::text) || g.numero::text AS nroguia, g.fecha_traslado, m.descripcion AS motivo, g.destinatario, g.ruc_destinatario, g.dni_destinatario, g.punto_partida, g.punto_llegada, g.idsucursal, g.estado, g.finalizado, g.tipo_guia
+,g.idmotivo_guia
+   FROM almacen.guia_remision g
+   JOIN almacen.motivo_guia m ON m.idmotivo_guia = g.idmotivo_guia;
+
+ALTER TABLE almacen.guia_remision_view
+  OWNER TO postgres;
+  
+  
+--------------------------------------------- 22/06/2017 --------------------------------------
+INSERT INTO seguridad.param VALUES ('idrol_cajero', '4', 'Este es el pk del rol(tipo empleado) CAJERO, comparar con la tabla general.tipoempleado', 'A');
+
+CREATE OR REPLACE VIEW venta.venta_detalle_view AS 
+ SELECT dv.idventa, dv.descripcion AS producto, u.descripcion AS unidadmedida, v.fecha_venta AS fecha_operacion, v.fecha_venta
+ , COALESCE(cli.nombres::text || ' '::text, ''::text) || COALESCE(cli.apellidos, ''::character varying)::text AS cliente
+ , tp.descripcion AS tipopago, suc.descripcion AS sucursal, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo
+ , m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen, v.correlativo AS numero, v.serie
+ , v.idcliente, v.idsucursal, v.idtipoventa, v.idtipodocumento, v.idmoneda, v.idtipopago, v.estado
+ , v.subtotal AS subtotal_venta, v.igv AS igv_venta, v.descuento AS descuento_venta, td.abreviatura AS simbolo_tipodoc
+ , dv.idproducto, prod.idlinea, prod.idmodelo, prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dv.precio AS precio_venta_detalle, dv.costo AS precio_costo_detalle, dv.cantidad AS cantidad_detalle, v.cambio_moneda, COALESCE(dv.cantidad, 0::numeric::double precision) * dv.precio AS subtotal, v.idvendedor, (COALESCE(emp.nombres::text || ' '::text, ''::text) || COALESCE(emp.appat::text || ' '::text, ''::text)) || COALESCE(emp.apmat, ''::character varying)::text AS vendedor
+,v.idusuario
+,usu.nombres cajero
+,emp.nombres vendedor_nombre
+,emp.appat vendedor_appat
+   FROM venta.detalle_venta dv
+   JOIN venta.venta v ON v.idventa = dv.idventa
+   JOIN compra.producto prod ON prod.idproducto = dv.idproducto
+   JOIN compra.unidad u ON u.idunidad = dv.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN venta.cliente cli ON cli.idcliente = v.idcliente
+   JOIN seguridad.sucursal suc ON suc.idsucursal = v.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = v.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = v.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = v.idtipopago
+   JOIN seguridad.usuario emp ON emp.idusuario = v.idvendedor;
+
+ALTER TABLE venta.venta_detalle_view
+  OWNER TO postgres;
+  
+  
+  
+  
+  CREATE OR REPLACE VIEW venta.venta_head_view AS 
+ SELECT venta_detalle_view.idventa, venta_detalle_view.fecha_operacion, venta_detalle_view.fecha_venta, btrim(venta_detalle_view.cliente) AS cliente, venta_detalle_view.tipopago, venta_detalle_view.sucursal, venta_detalle_view.tipoventa, venta_detalle_view.moneda AS msimbolo, venta_detalle_view.abreviatura, venta_detalle_view.tipodocumento, venta_detalle_view.almacen, venta_detalle_view.serie, venta_detalle_view.numero, venta_detalle_view.idcliente, venta_detalle_view.idsucursal, venta_detalle_view.idtipoventa, venta_detalle_view.idtipodocumento, venta_detalle_view.idtipopago, venta_detalle_view.estado, venta_detalle_view.subtotal_venta, venta_detalle_view.igv_venta, venta_detalle_view.simbolo_tipodoc, venta_detalle_view.idmoneda, venta_detalle_view.vendedor, venta_detalle_view.idvendedor
+,idusuario,cajero
+   FROM venta.venta_detalle_view
+  GROUP BY venta_detalle_view.idventa, venta_detalle_view.fecha_operacion, venta_detalle_view.fecha_venta, venta_detalle_view.cliente, venta_detalle_view.tipopago, venta_detalle_view.sucursal, venta_detalle_view.tipoventa, venta_detalle_view.moneda, venta_detalle_view.simbolo, venta_detalle_view.abreviatura, venta_detalle_view.tipodocumento, venta_detalle_view.almacen, venta_detalle_view.serie, venta_detalle_view.numero, venta_detalle_view.idcliente, venta_detalle_view.idsucursal, venta_detalle_view.idtipoventa, venta_detalle_view.idtipodocumento, venta_detalle_view.idtipopago, venta_detalle_view.estado, venta_detalle_view.subtotal_venta, venta_detalle_view.igv_venta, venta_detalle_view.simbolo_tipodoc, venta_detalle_view.idmoneda, venta_detalle_view.vendedor, venta_detalle_view.idvendedor
+,idusuario,cajero
+  ;
+
+ALTER TABLE venta.venta_head_view
+  OWNER TO postgres;
+  
+  
+------------------------------------- 23/06/2017 ---------------------------
+-- no se quien hizo este cambio pero no lo ha subido
+
+CREATE TABLE seguridad.personal_configuration
+(
+  idpersonalconf serial NOT NULL,
+  idusuario integer NOT NULL,
+  idsucursal integer NOT NULL,
+  idtipodocumento integer,
+  serie character varying(20),
+  CONSTRAINT personal_configuration_pkey PRIMARY KEY (idpersonalconf)
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE seguridad.personal_configuration
+  OWNER TO postgres;
+
+  
+CREATE OR REPLACE VIEW general.ubigeozona_view AS 
+ SELECT DISTINCT b.idubigeo,
+    b.descripcion
+   FROM general.zona a,
+    general.ubigeo b
+  WHERE a.idubigeo::bpchar = b.idubigeo AND a.estado = 'A'::bpchar
+  ORDER BY b.descripcion;
+
+ALTER TABLE general.ubigeozona_view
+  OWNER TO postgres;
+  
+  
+-- 11:27 insert param multi zona
+INSERT INTO seguridad.param VALUES ('multi_zona', 'S', 'Parametro para determinar si la asignacion de sucursal sera multiple, o zona unica por cobrador', 'A');
+
+
+------------------------------------- 25/06/2017 ---------------------------
+-- tabla para guardar la asignacion de las zonas por cobrador
+CREATE TABLE cobranza.zona_cobrador
+(
+  idzona_cobrador serial NOT NULL,
+  idzona integer,
+  idempleado integer,
+  idsucursal integer,
+  orden integer,
+  estado character(1) DEFAULT 'A'::bpchar,
+  CONSTRAINT pkzona_cobrador PRIMARY KEY (idzona_cobrador )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE cobranza.zona_cobrador
+  OWNER TO postgres;
+
+  
+------------------------------------ 27/06/2017 --------------------------------
+-- añadiendo campos a la vista
+CREATE OR REPLACE VIEW venta.venta_detalle_view AS 
+ SELECT dv.idventa, dv.descripcion AS producto, u.descripcion AS unidadmedida, v.fecha_venta AS fecha_operacion, v.fecha_venta, COALESCE(cli.nombres::text || ' '::text, ''::text) || COALESCE(cli.apellidos, ''::character varying)::text AS cliente, tp.descripcion AS tipopago, suc.descripcion AS sucursal, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen, v.correlativo AS numero, v.serie, v.idcliente, v.idsucursal, v.idtipoventa, v.idtipodocumento, v.idmoneda, v.idtipopago, v.estado, v.subtotal AS subtotal_venta, v.igv AS igv_venta, v.descuento AS descuento_venta, td.abreviatura AS simbolo_tipodoc, dv.idproducto, prod.idlinea, prod.idmodelo, prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dv.precio AS precio_venta_detalle, dv.costo AS precio_costo_detalle, dv.cantidad AS cantidad_detalle, v.cambio_moneda, COALESCE(dv.cantidad, 0::numeric::double precision) * dv.precio AS subtotal, v.idvendedor, (COALESCE(emp.nombres::text || ' '::text, ''::text) || COALESCE(emp.appat::text || ' '::text, ''::text)) || COALESCE(emp.apmat, ''::character varying)::text AS vendedor, v.idusuario, usu.nombres AS cajero, emp.nombres AS vendedor_nombre, emp.appat AS vendedor_appat, usu.nombres AS usuario
+,marca.descripcion marca
+,modelo.descripcion modelo
+,linea.descripcion linea
+,categoria.descripcion categoria
+   FROM venta.detalle_venta dv
+   JOIN venta.venta v ON v.idventa = dv.idventa
+   JOIN compra.producto prod ON prod.idproducto = dv.idproducto
+   JOIN general.marca ON marca.idmarca=prod.idmarca
+   JOIN general.modelo ON modelo.idmodelo=prod.idmodelo
+   JOIN general.linea ON linea.idlinea=prod.idlinea
+   JOIN general.categoria ON categoria.idcategoria=prod.idcategoria
+   JOIN compra.unidad u ON u.idunidad = dv.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN venta.cliente cli ON cli.idcliente = v.idcliente
+   JOIN seguridad.sucursal suc ON suc.idsucursal = v.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = v.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = v.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = v.idtipopago
+   JOIN seguridad.usuario emp ON emp.idusuario = v.idvendedor;
+
+ALTER TABLE venta.venta_detalle_view
+  OWNER TO postgres;
+-- ok
+  
+  
+-- mejorando vista de ubigeo zona
+DROP VIEW general.ubigeozona_view;
+CREATE OR REPLACE VIEW general.ubigeozona_view AS 
+ SELECT DISTINCT CAST(b.idubigeo AS text) idubigeo, b.descripcion
+   FROM general.zona a, general.ubigeo b
+  WHERE a.idubigeo::bpchar = b.idubigeo AND a.estado = 'A'::bpchar
+  ORDER BY b.descripcion;
+
+ALTER TABLE general.ubigeozona_view
+  OWNER TO postgres;
+  
+------------------------------------------------------ 03/07/2017 -----------------------------------
+-- para el reporte de inventario en modulo consultar almacen
+CREATE OR REPLACE VIEW venta.view_utilidad_producto AS 
+ SELECT producto.idproducto, producto.idmarca, producto.idmodelo, producto.idcategoria, vs.stock, producto.descripcion, unidad.abreviatura, detalle_venta.idalmacen, round(sum(detalle_venta.cantidad::bigint), 2) AS unidades, round(avg(detalle_venta.precio::bigint), 2) AS precio_venta, round(sum(detalle_venta.cantidad::bigint), 1) * round(avg(detalle_venta.precio::bigint), 1) AS importe_venta, round(avg(detalle_venta.costo), 2) AS costo, round(avg(detalle_venta.costo), 1) * round(sum(detalle_venta.cantidad::bigint), 1) AS costo_ventas, round(sum(detalle_venta.cantidad::bigint), 1) * round(avg(detalle_venta.precio::bigint), 1) - round(avg(producto_precio_compra.precio::bigint), 1) * round(sum(detalle_venta.cantidad::bigint), 1) AS utilidad
+ ,marca.descripcion solo_marca
+ ,modelo.descripcion solo_modelo
+   FROM venta.venta
+   JOIN venta.detalle_venta ON venta.idventa = detalle_venta.idventa
+   JOIN compra.producto ON detalle_venta.idproducto = producto.idproducto
+   JOIN general.marca ON marca.idmarca=producto.idmarca
+   JOIN general.modelo ON modelo.idmodelo=producto.idmodelo
+   JOIN compra.producto_precio_compra ON producto_precio_compra.idproducto = producto.idproducto
+   JOIN compra.unidad ON producto.idunidad = unidad.idunidad
+   JOIN almacen.view_stock vs ON vs.idalmacen = detalle_venta.idalmacen AND vs.idproducto = producto.idproducto
+  WHERE detalle_venta.estado::text = 'A'::text
+  GROUP BY producto.idproducto, producto.descripcion, unidad.abreviatura, detalle_venta.idalmacen, vs.stock, producto.idmarca, producto.idmodelo, producto.idcategoria
+  ,solo_marca
+  ,solo_modelo
+  ORDER BY producto.idproducto;
+
+ALTER TABLE venta.view_utilidad_producto
+  OWNER TO postgres;
+  
+  
+------------------------------------------------------ 03/07/2017 -----------------------------------
+-- vista para el reporte de inventario, el anterior es para utilidades
+CREATE OR REPLACE VIEW almacen.view_stock AS 
+ SELECT d.idproducto, COALESCE(sum(d.cantidad::double precision * u.cantidad_unidad_min * d.tipo_number::double precision), 0::double precision) AS stock, producto.descripcion AS producto, producto.descripcion_detallada AS producto_detallado, marca.descripcion AS marca, modelo.descripcion AS modelo, color.descripcion AS color, unidad.descripcion AS unidad_medida, marca.idmarca, modelo.idmodelo, color.idcolor, producto.imagen_producto, sum(COALESCE(d.precio_costo, 0::double precision)) AS precio_costo, sum(COALESCE(d.precio_venta, 0::double precision)) AS precio_venta, categoria.descripcion AS categoria, COALESCE(COALESCE(producto.peso, ''::character varying), '0'::character varying) AS peso, COALESCE(tamanio.descripcion, '0'::character varying) AS tamanio, producto.codigo_barras, producto.idcategoria, d.idalmacen
+,unidad.abreviatura um
+   FROM compra.producto
+   LEFT JOIN almacen.detalle_almacen d ON producto.idproducto = d.idproducto AND d.estado = 'A'::bpchar
+   LEFT JOIN compra.producto_unidad u ON u.idproducto = d.idproducto AND u.idunidad = d.idunidad
+   LEFT JOIN compra.unidad ON unidad.idunidad = producto.idunidad
+   LEFT JOIN general.marca ON marca.idmarca = producto.idmarca
+   LEFT JOIN general.modelo ON modelo.idmodelo = producto.idmodelo
+   LEFT JOIN general.color ON color.idcolor = producto.idcolor
+   LEFT JOIN general.categoria ON categoria.idcategoria = producto.idcategoria
+   LEFT JOIN general.tamanio ON tamanio.idtamanio = producto.idtamanio
+  WHERE producto.estado = 'A'::bpchar
+  GROUP BY d.idproducto, producto.descripcion, producto.descripcion_detallada, unidad.descripcion, marca.descripcion, modelo.descripcion, color.descripcion, marca.idmarca, modelo.idmodelo, color.idcolor, producto.imagen_producto, categoria.descripcion, producto.peso, tamanio.descripcion, producto.codigo_barras, producto.idcategoria, d.idalmacen
+  ,um;
+
+ALTER TABLE almacen.view_stock
+  OWNER TO postgres;
+
+  
+------------------------------------------------------ 04/07/2017 -----------------------------------
+-- añadiendo campos a la vista
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, COALESCE(v.subtotal, 0::double precision) + COALESCE(v.igv::double precision, 0::double precision) - COALESCE(v.descuento::double precision, 0::double precision) AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion, 
+        CASE
+            WHEN COALESCE(nc.idventa::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_notacredito, 
+        CASE
+            WHEN COALESCE(gr.idreferencia::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_guia, (COALESCE(vendedor.appat::text || ' '::text, ''::text) || COALESCE(vendedor.apmat::text || ' '::text, ''::text)) || COALESCE(vendedor.nombres)::text AS vendedor, vendedor.usuario
+,COALESCE(vendedor.nombres) nombre_vendedor
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa = v.idventa AND nc.estado = 'A'::bpchar AND v.estado <> 'I'::bpchar
+   LEFT JOIN almacen.guia_remision gr ON gr.idreferencia = v.idventa AND gr.referencia::text = 'V'::text AND gr.estado::bpchar = 'A'::bpchar AND gr.estado::bpchar <> 'I'::bpchar
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario = v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+  
+-- añadiendo campos a vista d credito
+CREATE OR REPLACE VIEW credito.credito_view AS 
+ SELECT DISTINCT ON (c.idcredito) c.idcredito, c.idsucursal, c.idventa, c.idcliente, (l.nombres::text || ' '::text) || COALESCE(l.apellidos, ''::character varying)::text AS cliente, e.descripcion AS estado_credito, c.nro_credito, c.fecha_credito, c.nro_letras, c.monto_facturado, c.interes, c.monto_credito, c.pagado, c.central_riesgo, c.dias_gracia, c.tasa, c.inicial, c.gastos, c.capital, c.estado, c.idmoneda, m.descripcion AS moneda, (g.nombres::text || ' '::text) || COALESCE(g.apellidos, ''::character varying)::text AS garante, v.comprobante, c.id_estado_credito
+ , COALESCE(l.direccion_principal, cd.direccion, ''::text) AS direccion, COALESCE(h.idcobrador, v.idvendedor) AS idcobrador
+ , CAST(COALESCE(zona.zona,'NO ASIGNADO') AS character varying(1000))zona
+,l.linea_credito
+,ct.telefono
+,l.idzona
+,l.limite_credito
+,m.abreviatura m_corto
+,nombre_vendedor
+   FROM credito.credito c
+   JOIN venta.cliente l ON l.idcliente = c.idcliente
+   JOIN credito.estado_credito e ON e.id_estado_credito = c.id_estado_credito
+   LEFT JOIN venta.cliente g ON g.idcliente = c.idgarante
+   JOIN venta.venta_view v ON v.idventa = c.idventa
+   LEFT JOIN general.zona ON zona.idzona = l.idzona
+   LEFT JOIN cobranza.hoja_ruta h ON h.idventa = c.idventa AND h.idsucursal = c.idsucursal
+   LEFT JOIN ( SELECT cliente_direccion.idcliente, array_to_string(array_agg(cliente_direccion.direccion), ', '::text) AS direccion
+		FROM venta.cliente_direccion
+		WHERE cliente_direccion.estado = 'A'::bpchar
+		GROUP BY cliente_direccion.idcliente
+  ) cd ON cd.idcliente = l.idcliente
+  LEFT JOIN(
+	SELECT cliente_telefono.idcliente, array_to_string(array_agg(cliente_telefono.telefono), ', '::text) AS telefono
+		FROM venta.cliente_telefono
+		WHERE cliente_telefono.estado = 'A'::bpchar
+		GROUP BY cliente_telefono.idcliente
+  ) ct ON ct.idcliente=l.idcliente
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda
+   ;
+
+ALTER TABLE credito.credito_view
+  OWNER TO postgres;
+
+  
+-- OK
+
+------------------------------------------ 06/07/2017 ------------------------------------
+CREATE OR REPLACE VIEW venta.cliente_view AS 
+ SELECT c.idcliente, btrim(COALESCE(c.apellidos::text || ' '::text, ''::text) || c.nombres::text) AS cliente, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, count(cred.idcredito) AS cant_cred, c.estado, 
+        CASE
+            WHEN c.tipo = 'J'::bpchar THEN 'RUC: '::text || c.ruc::text
+            ELSE 'DNI: '::text || c.dni::text
+        END AS documento_cliente, 
+        CASE
+            WHEN c.tipo = 'N'::bpchar THEN 'NATURAL'::text
+            ELSE 'JURIDICO'::text
+        END AS tipo_cliente, c.linea_credito, zona.zona, c.idzona, c.direccion_principal AS direccion, c.bloqueado, c.limite_credito
+        ,ct.telefono
+   FROM venta.cliente c
+     LEFT JOIN(
+	SELECT cliente_telefono.idcliente, array_to_string(array_agg(cliente_telefono.telefono), ', '::text) AS telefono
+		FROM venta.cliente_telefono
+		WHERE cliente_telefono.estado = 'A'::bpchar
+		GROUP BY cliente_telefono.idcliente
+  ) ct ON ct.idcliente=c.idcliente
+   LEFT JOIN credito.credito cred ON cred.idcliente = c.idcliente
+   LEFT JOIN general.zona ON zona.idzona = c.idzona
+   
+  GROUP BY c.idcliente, c.apellidos, c.nombres, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, c.estado, zona.zona, c.idzona,ct.telefono;
+
+ALTER TABLE venta.cliente_view
+  OWNER TO postgres;
+  
+-- OK
+
+-- corrigiendo vista detalle venta
+CREATE OR REPLACE VIEW venta.venta_detalle_view AS 
+ SELECT 
+DISTINCT dv.idventa, dv.descripcion AS producto, u.descripcion AS unidadmedida, v.fecha_venta AS fecha_operacion, v.fecha_venta, COALESCE(cli.nombres::text || ' '::text, ''::text) || COALESCE(cli.apellidos, ''::character varying)::text AS cliente, tp.descripcion AS tipopago, suc.descripcion AS sucursal, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen, v.correlativo AS numero, v.serie, v.idcliente, v.idsucursal, v.idtipoventa, v.idtipodocumento, v.idmoneda, v.idtipopago, v.estado, v.subtotal AS subtotal_venta, v.igv AS igv_venta, v.descuento AS descuento_venta, td.abreviatura AS simbolo_tipodoc, dv.idproducto, prod.idlinea, prod.idmodelo, prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dv.precio AS precio_venta_detalle, dv.costo AS precio_costo_detalle, dv.cantidad AS cantidad_detalle, v.cambio_moneda, COALESCE(dv.cantidad, 0::numeric::double precision) * dv.precio AS subtotal, v.idvendedor, (COALESCE(emp.nombres::text || ' '::text, ''::text) || COALESCE(emp.appat::text || ' '::text, ''::text)) || COALESCE(emp.apmat, ''::character varying)::text AS vendedor, emp.usuario, v.idusuario, usu.nombres AS cajero, emp.nombres AS vendedor_nombre, emp.appat AS vendedor_appat, marca.descripcion AS marca, modelo.descripcion AS modelo, linea.descripcion AS linea, categoria.descripcion AS categoria
+   FROM venta.detalle_venta dv
+   JOIN venta.venta v ON v.idventa = dv.idventa
+   JOIN compra.producto prod ON prod.idproducto = dv.idproducto
+   JOIN general.marca ON marca.idmarca = prod.idmarca
+   JOIN general.modelo ON modelo.idmodelo = prod.idmodelo
+   JOIN general.linea ON linea.idlinea = prod.idlinea
+   JOIN general.categoria ON categoria.idcategoria = prod.idcategoria
+   JOIN compra.unidad u ON u.idunidad = dv.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN venta.cliente cli ON cli.idcliente = v.idcliente
+   JOIN seguridad.sucursal suc ON suc.idsucursal = v.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = v.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = v.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = v.idtipopago
+   JOIN seguridad.usuario emp ON emp.idusuario = v.idvendedor;
+
+ALTER TABLE venta.venta_detalle_view
+  OWNER TO postgres;
+  
+  
+------------------------------------------------------ 08/07/2017 ----------------------------------------
+-- validadndo en la vista si es oferta, mostrar cero
+CREATE OR REPLACE VIEW venta.venta_detalle_view AS 
+ SELECT DISTINCT dv.idventa, dv.descripcion AS producto, u.descripcion AS unidadmedida, v.fecha_venta AS fecha_operacion, v.fecha_venta
+ , COALESCE(cli.nombres::text || ' '::text, ''::text) || COALESCE(cli.apellidos, ''::character varying)::text AS cliente, tp.descripcion AS tipopago, suc.descripcion AS sucursal
+ , tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen
+ , v.correlativo AS numero, v.serie, v.idcliente, v.idsucursal, v.idtipoventa, v.idtipodocumento, v.idmoneda, v.idtipopago, v.estado
+ , v.subtotal AS subtotal_venta, v.igv AS igv_venta, v.descuento AS descuento_venta, td.abreviatura AS simbolo_tipodoc, dv.idproducto, prod.idlinea, prod.idmodelo
+ , prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dv.precio AS precio_venta_detalle, dv.costo AS precio_costo_detalle, dv.cantidad AS cantidad_detalle
+ , v.cambio_moneda
+ , COALESCE(dv.cantidad, 0::numeric::double precision) * (CASE WHEN dv.oferta='N' THEN dv.precio ELSE 0 END) AS subtotal
+ , v.idvendedor, (COALESCE(emp.nombres::text || ' '::text, ''::text) || COALESCE(emp.appat::text || ' '::text, ''::text)) || COALESCE(emp.apmat, ''::character varying)::text AS vendedor, emp.usuario, v.idusuario, usu.nombres AS cajero, emp.nombres AS vendedor_nombre, emp.appat AS vendedor_appat, marca.descripcion AS marca, modelo.descripcion AS modelo, linea.descripcion AS linea, categoria.descripcion AS categoria
+,COALESCE(cli.apellidos, ''::character varying)::text||COALESCE(cli.nombres::text || ' '::text, ''::text) AS cliente_apellidos
+,dv.oferta
+   FROM venta.detalle_venta dv
+   JOIN venta.venta v ON v.idventa = dv.idventa
+   JOIN compra.producto prod ON prod.idproducto = dv.idproducto
+   JOIN general.marca ON marca.idmarca = prod.idmarca
+   JOIN general.modelo ON modelo.idmodelo = prod.idmodelo
+   JOIN general.linea ON linea.idlinea = prod.idlinea
+   JOIN general.categoria ON categoria.idcategoria = prod.idcategoria
+   JOIN compra.unidad u ON u.idunidad = dv.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN venta.cliente cli ON cli.idcliente = v.idcliente
+   JOIN seguridad.sucursal suc ON suc.idsucursal = v.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = v.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = v.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = v.idtipopago
+   JOIN seguridad.usuario emp ON emp.idusuario = v.idvendedor
+  ;
+
+ALTER TABLE venta.venta_detalle_view
+  OWNER TO postgres;
+  
+  
+------------------------------------------------------ 09/07/2017 ----------------------------------------
+CREATE OR REPLACE VIEW venta.reciboegreso_view AS 
+ SELECT r.idreciboegreso, r.serie, r.numero, r.tabla, r.idpersona, r.monto, r.idmoneda, r.tipocambio, r.fecha, r.hora, r.concepto, r.idtipopago, r.idamortizacion, r.idusuario, r.idsucursal, r.tipo_egreso, r.idconceptomovimiento, r.idtipodocumento_ref, r.idtipodocumento, r.serie_doc, r.numero_doc, r.estado, 
+        CASE
+            WHEN r.tabla::text = 'CLIENTE'::text THEN ( SELECT c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text)
+               FROM venta.cliente c
+              WHERE c.idcliente = r.idpersona)
+            WHEN r.tabla::text = 'EMPLEADO'::text THEN ( SELECT (u.nombres::text || u.appat::text) || u.apmat::text
+               FROM seguridad.usuario u
+              WHERE u.idusuario = r.idpersona)
+            ELSE NULL::text
+        END AS referencia, (r.serie::text || '-'::text) || r.numero::text AS recibo
+        ,r.idtipo_recibo
+   FROM venta.reciboegreso r;
+
+ALTER TABLE venta.reciboegreso_view
+  OWNER TO postgres;
+  
+  
+-- extendiendo campo para los pk compuestos
+ALTER TABLE auditoria.tabla_log ALTER COLUMN pk_tabla TYPE character varying(150);
+ALTER TABLE auditoria.tabla_log ALTER COLUMN pk_value TYPE character varying(150);
+
+
+
+------------------------------------------------------ 10/07/2017 ----------------------------------------
+-- campo factor en detalle venta
+CREATE OR REPLACE VIEW venta.venta_detalle_view AS 
+ SELECT DISTINCT dv.idventa, dv.descripcion AS producto, u.descripcion AS unidadmedida, v.fecha_venta AS fecha_operacion, v.fecha_venta, COALESCE(cli.nombres::text || ' '::text, ''::text) || COALESCE(cli.apellidos, ''::character varying)::text AS cliente, tp.descripcion AS tipopago, suc.descripcion AS sucursal, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen, v.correlativo AS numero, v.serie, v.idcliente, v.idsucursal, v.idtipoventa, v.idtipodocumento, v.idmoneda, v.idtipopago, v.estado, v.subtotal AS subtotal_venta, v.igv AS igv_venta, v.descuento AS descuento_venta, td.abreviatura AS simbolo_tipodoc, dv.idproducto, prod.idlinea, prod.idmodelo, prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dv.precio AS precio_venta_detalle, dv.costo AS precio_costo_detalle, dv.cantidad AS cantidad_detalle, v.cambio_moneda, COALESCE(dv.cantidad, 0::numeric::double precision) * 
+        CASE
+            WHEN dv.oferta::text = 'N'::text THEN dv.precio
+            ELSE 0::double precision
+        END AS subtotal, v.idvendedor, (COALESCE(emp.nombres::text || ' '::text, ''::text) || COALESCE(emp.appat::text || ' '::text, ''::text)) || COALESCE(emp.apmat, ''::character varying)::text AS vendedor, emp.usuario, v.idusuario, usu.nombres AS cajero, emp.nombres AS vendedor_nombre, emp.appat AS vendedor_appat, marca.descripcion AS marca, modelo.descripcion AS modelo, linea.descripcion AS linea, categoria.descripcion AS categoria, COALESCE(cli.apellidos, ''::character varying)::text || COALESCE(cli.nombres::text || ' '::text, ''::text) AS cliente_apellidos, dv.oferta
+,u.abreviatura um
+,COALESCE(prod.factor,0) factor
+,COALESCE(prod.factor,0)*dv.cantidad fac_galon
+   FROM venta.detalle_venta dv
+   JOIN venta.venta v ON v.idventa = dv.idventa
+   JOIN compra.producto prod ON prod.idproducto = dv.idproducto
+   JOIN general.marca ON marca.idmarca = prod.idmarca
+   JOIN general.modelo ON modelo.idmodelo = prod.idmodelo
+   JOIN general.linea ON linea.idlinea = prod.idlinea
+   JOIN general.categoria ON categoria.idcategoria = prod.idcategoria
+   JOIN compra.unidad u ON u.idunidad = dv.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN venta.cliente cli ON cli.idcliente = v.idcliente
+   JOIN seguridad.sucursal suc ON suc.idsucursal = v.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = v.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = v.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = v.idtipopago
+   JOIN seguridad.usuario emp ON emp.idusuario = v.idvendedor;
+
+ALTER TABLE venta.venta_detalle_view
+  OWNER TO postgres;
+-- OK
+
+
+-- añadir idcobrador en recibo egreso, solo para efectos de cobranza
+alter table venta.reciboingreso add column idcobrador integer;
+
+-- add idzona in view
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT DISTINCT ON (v.idventa) v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, COALESCE(v.subtotal, 0::double precision) + COALESCE(v.igv::double precision, 0::double precision) - COALESCE(v.descuento::double precision, 0::double precision) AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion, 
+        CASE
+            WHEN COALESCE(nc.idventa::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_notacredito, 
+        CASE
+            WHEN COALESCE(gr.idreferencia::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_guia
+		, (COALESCE(vendedor.appat::text || ' '::text, ''::text) || COALESCE(vendedor.apmat::text || ' '::text, ''::text)) || COALESCE(vendedor.nombres)::text AS vendedor, vendedor.usuario, COALESCE(vendedor.nombres) AS nombre_vendedor
+,c.idzona
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa = v.idventa AND nc.estado = 'A'::bpchar AND v.estado <> 'I'::bpchar
+   LEFT JOIN almacen.guia_remision gr ON gr.idreferencia = v.idventa AND gr.referencia::text = 'V'::text AND gr.estado::bpchar = 'A'::bpchar AND gr.estado::bpchar <> 'I'::bpchar
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario = v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+  
+  
+-- tabla para guardar y generar las comisiones de los cobradores
+CREATE TABLE cobranza.liquidacion_visita
+(
+  idcredito integer NOT NULL,
+  idventa integer NOT NULL,
+  id_recibo integer NOT NULL,
+  idcobrador integer,
+  idusuario integer,
+  idcliente integer,
+  idsucursal integer,
+  idzona integer,
+  idtipodocumento integer,
+  serie character varying(50),
+  numero integer,
+  idtipo_pago integer,
+  tipo_liquidacion integer,
+  importe numeric(10,2),
+  fecha_liquidacion date,
+  hora_liquidacion time without time zone,
+  estado character(1),
+  CONSTRAINT pk_liquidacion_cobranza PRIMARY KEY (idcredito , idventa , id_recibo )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE cobranza.liquidacion_visita
+  OWNER TO postgres;
+  
+-- OK
+
+
+
+------------------------------------------------------ 12/07/2017 ----------------------------------------
+-- añadiendo idsucursal en la vista
+CREATE OR REPLACE VIEW almacen.view_stock AS 
+ SELECT d.idproducto, COALESCE(sum(d.cantidad::double precision * u.cantidad_unidad_min * d.tipo_number::double precision), 0::double precision) AS stock, producto.descripcion AS producto, producto.descripcion_detallada AS producto_detallado, marca.descripcion AS marca, modelo.descripcion AS modelo, color.descripcion AS color, unidad.descripcion AS unidad_medida, marca.idmarca, modelo.idmodelo, color.idcolor, producto.imagen_producto, sum(COALESCE(d.precio_costo, 0::double precision)) AS precio_costo, sum(COALESCE(d.precio_venta, 0::double precision)) AS precio_venta, categoria.descripcion AS categoria, COALESCE(COALESCE(producto.peso, ''::character varying), '0'::character varying) AS peso, COALESCE(tamanio.descripcion, '0'::character varying) AS tamanio, producto.codigo_barras, producto.idcategoria, d.idalmacen, unidad.abreviatura AS um
+,d.idsucursal
+,unidad.idunidad
+   FROM compra.producto
+   LEFT JOIN almacen.detalle_almacen d ON producto.idproducto = d.idproducto AND d.estado = 'A'::bpchar
+   LEFT JOIN compra.producto_unidad u ON u.idproducto = d.idproducto AND u.idunidad = d.idunidad
+   LEFT JOIN compra.unidad ON unidad.idunidad = producto.idunidad
+   LEFT JOIN general.marca ON marca.idmarca = producto.idmarca
+   LEFT JOIN general.modelo ON modelo.idmodelo = producto.idmodelo
+   LEFT JOIN general.color ON color.idcolor = producto.idcolor
+   LEFT JOIN general.categoria ON categoria.idcategoria = producto.idcategoria
+   LEFT JOIN general.tamanio ON tamanio.idtamanio = producto.idtamanio
+  WHERE producto.estado = 'A'::bpchar
+  GROUP BY d.idproducto, producto.descripcion, producto.descripcion_detallada, unidad.descripcion, marca.descripcion, modelo.descripcion, color.descripcion, marca.idmarca, modelo.idmodelo, color.idcolor, producto.imagen_producto, categoria.descripcion, producto.peso, tamanio.descripcion, producto.codigo_barras, producto.idcategoria, d.idalmacen, unidad.abreviatura
+,d.idsucursal
+,unidad.idunidad
+  ;
+
+ALTER TABLE almacen.view_stock
+  OWNER TO postgres;
+  
+  
+-- filtrando vista por usuarios activos
+CREATE OR REPLACE VIEW cobranza.view_cobradores AS 
+ SELECT u.idusuario, (u.nombres::text || ' '::text) || COALESCE((u.appat::text || ' '::text) || u.apmat::text) AS empleado, ae.estado, ae.idtipoempleado, ae.idsucursal
+   FROM seguridad.acceso_empresa ae
+   JOIN seguridad.usuario u ON u.idusuario = ae.idusuario AND u.estado='A' AND u.baja='N'
+   JOIN general.tipoempleado ON tipoempleado.idtipoempleado = ae.idtipoempleado;
+
+ALTER TABLE cobranza.view_cobradores
+  OWNER TO postgres;
+  
+  
+-- vista compra
+CREATE OR REPLACE VIEW compra.compra_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, tv.descripcion AS tipoventa, m.abreviatura AS moneda, m.simbolo, t.descripcion AS tipo_documento, COALESCE(c.serie::text || '-'::text, ''::text) || c.numero::text AS nrodocumento, c.subtotal, COALESCE(c.descuento, 0.00) AS descuento, c.igv, c.subtotal + c.igv - COALESCE(c.descuento, 0.00) AS total, c.estado, c.recepcionado, c.fecha_compra, to_char(c.fecha_compra::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idsucursal, p.ruc, (COALESCE(t.abreviatura::text || '-'::text, ''::text) || COALESCE(c.serie::text || '-'::text, ''::text)) || c.numero::text AS comprobante, c.idproveedor
+,tv.idtipoventa
+,c.idmoneda
+   FROM compra.compra c
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+ALTER TABLE compra.compra_view
+  OWNER TO postgres;
+  
+  
+  
+  
+  
+------------------------------------------------------ 14/07/2017 ----------------------------------------
+-- añadiendo campo doc cliente
+CREATE OR REPLACE VIEW venta.notacredito_view AS 
+ SELECT n.idnotacredito, n.fecha, (n.serie::text || '-'::text) || n.numero::text AS nrodocumento, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente
+ , n.subtotal, n.igv, n.subtotal + n.igv AS total
+ , n.descripcion AS motivo
+ , (((t.abreviatura::text || ' '::text) || n.serie_ref::text) || '-'::text) || n.numero_ref::text AS tipodoc_ref, n.estado, n.idsucursal
+ , n.idusuario, n.idmoneda, m.descripcion AS moneda, t.descripcion AS tipo_documento_ref
+ , c.dni
+ , c.ruc
+ , c.direccion_principal AS direccion
+ , n.serie, n.numero, n.numero AS correlativo, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres
+ , to_char(n.fecha::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, venta.tipo_documento AS documento_modifica
+ , venta.comprobante AS comprobante_modifica, n.descuento, n.total_con_descuento AS total_desc
+ ,venta.doc_cliente
+   FROM venta.notacredito n
+   JOIN venta.cliente c ON c.idcliente = n.idcliente
+   JOIN venta.tipo_documento t ON t.idtipodocumento = n.iddocumento_ref
+   JOIN venta.venta_view venta ON venta.idventa = n.idventa
+   JOIN general.moneda m ON m.idmoneda = n.idmoneda;
+
+ALTER TABLE venta.notacredito_view
+  OWNER TO postgres;
+  
+  
+  
+------------------------------------------------------ 17/07/2017 ----------------------------------------
+-- añadiendo columna baja en la vista
+CREATE OR REPLACE VIEW seguridad.view_usuario AS 
+ SELECT u.idusuario, u.nombres, u.appat, u.apmat, u.usuario, u.clave, u.direccion, u.email, u.fecha_nac, u.sexo, u.avatar, u.fecha_registro, u.estado, (u.appat::text || ' '::text) || u.apmat::text AS apellidos, btrim((COALESCE(u.nombres::text || ' '::text, ''::text) || COALESCE(u.appat::text || ' '::text, ''::text)) || COALESCE(u.apmat::text || ' '::text, ''::text)) AS user_nombres
+,u.baja
+   FROM seguridad.usuario u
+  ORDER BY u.usuario;
+
+ALTER TABLE seguridad.view_usuario
+  OWNER TO postgres;
+-- OK
+
+
+
+
+-- Tablas y vista de cuentas por pagar
+CREATE TABLE compra.deuda
+(
+  iddeuda serial NOT NULL,
+  idproveedor integer,
+  idmoneda integer,
+  idsucursal integer,
+  idusuario integer, -- usuario que crea el credito
+  nro_credito text,
+  cant_letras integer,
+  monto numeric(10,2),
+  gastos numeric(10,2),
+  pagado character(1) DEFAULT 'N'::bpchar,
+  fecha_deuda date,
+  fecha_registro date,
+  hora_registro time without time zone,
+  estado character(1),
+  CONSTRAINT pk_deuda PRIMARY KEY (iddeuda )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE compra.deuda
+  OWNER TO postgres;
+COMMENT ON COLUMN compra.deuda.idusuario IS 'usuario que crea el credito';
+
+
+-- relacion de compras y creditos
+CREATE TABLE compra.compra_deuda
+(
+  iddeuda integer NOT NULL,
+  idcompra integer NOT NULL,
+  CONSTRAINT pk_deudacompra PRIMARY KEY (iddeuda , idcompra )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE compra.compra_deuda
+  OWNER TO postgres;
+COMMENT ON TABLE compra.compra_deuda
+  IS 'tabla para guardar las compras que pertenecen a una deuda';
+
+  
+-- tabla letra deuda proeedor
+CREATE TABLE compra.letra
+(
+  idletra integer NOT NULL,
+  iddeuda integer NOT NULL,
+  idusuario integer,
+  idtipo_pago integer,
+  fecha_vencimiento date,
+  fecha_cancelado timestamp without time zone,
+  nro_letra integer,
+  tipo_letra character(1),
+  descripcion character varying(100),
+  monto_capital numeric(10,2),
+  monto_letra numeric(10,2),
+  gastos numeric(10,2),
+  descuento numeric(10,2),
+  mora numeric(10,2),
+  interes numeric(10,2),
+  pagado character varying(1),
+  idnotacredito integer,
+  estado character(1),
+  serie character varying(100),
+  numero character varying(80),
+  idforma_pago_compra integer,
+  hora_pago time without time zone,
+  idsucursal_pago integer,
+  CONSTRAINT pk_letra PRIMARY KEY (idletra , iddeuda )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE compra.letra
+  OWNER TO postgres;
+COMMENT ON TABLE compra.letra
+  IS 'tabla para guardar las letras de las deudas a los proveedores';
+
+  
+  
+-- 
+
+CREATE OR REPLACE VIEW compra.deuda_view AS 
+ SELECT d.iddeuda, d.idmoneda, d.idsucursal, d.idusuario, d.nro_credito, d.cant_letras, d.monto, d.gastos, d.pagado, d.fecha_deuda, d.fecha_registro, d.hora_registro, d.estado, array_to_string(array_agg(compra.comprobante), ','::text) AS comprobante, compra.proveedor, compra.ruc, COALESCE(l.monto_deuda, 0::numeric) AS monto_deuda, l.fecha_venc, to_char(l.fecha_venc::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_vencimiento, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric) AS monto_cancelado, 
+        CASE
+            WHEN COALESCE(a.monto_pagado, 0::numeric) > 0::numeric THEN true
+            ELSE false
+        END AS has_amortizado, d.idproveedor
+,m.descripcion moneda
+,m.abreviatura moneda_corto
+   FROM compra.deuda d
+   JOIN ( SELECT c.comprobante, cd.iddeuda, c.proveedor, c.ruc
+           FROM compra.compra_deuda cd
+      JOIN compra.compra_view c ON c.idcompra = cd.idcompra) compra ON compra.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_deuda, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+      FROM compra.letra
+     WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text AND letra.fecha_vencimiento < 'now'::text::date
+     GROUP BY letra.iddeuda) l ON l.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_pagado, letra.iddeuda, max(letra.fecha_cancelado) AS ultimo_pago
+   FROM compra.letra
+  WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'S'::text
+  GROUP BY letra.iddeuda) a ON a.iddeuda = d.iddeuda
+  JOIN general.moneda m ON m.idmoneda=d.idmoneda
+  GROUP BY d.iddeuda, compra.proveedor, compra.ruc, l.monto_deuda, l.fecha_venc, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric),moneda,moneda_corto;
+
+ALTER TABLE compra.deuda_view
+  OWNER TO postgres;
+  
+  
+CREATE OR REPLACE VIEW compra.deuda_view AS 
+ SELECT d.iddeuda, d.idmoneda, d.idsucursal, d.idusuario, d.nro_credito, d.cant_letras, d.monto AS monto_deuda, d.gastos, d.pagado, d.fecha_deuda, d.fecha_registro, d.hora_registro, d.estado, array_to_string(array_agg(compra.comprobante), ','::text) AS comprobante, compra.proveedor, compra.ruc, COALESCE(l.monto_deuda, 0::numeric) AS monto_vencido, l.fecha_venc, to_char(l.fecha_venc::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_vencimiento, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric) AS monto_cancelado, ll.monto_deuda AS monto_pendiente, 
+        CASE
+            WHEN COALESCE(a.monto_pagado, 0::numeric) > 0::numeric THEN true
+            ELSE false
+        END AS has_amortizado, d.idproveedor, m.descripcion AS moneda, m.abreviatura AS moneda_corto
+   FROM compra.deuda d
+   JOIN ( SELECT c.comprobante, cd.iddeuda, c.proveedor, c.ruc
+           FROM compra.compra_deuda cd
+      JOIN compra.compra_view c ON c.idcompra = cd.idcompra) compra ON compra.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_deuda, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+      FROM compra.letra
+     WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text AND letra.fecha_vencimiento < 'now'::text::date
+     GROUP BY letra.iddeuda) l ON l.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_deuda, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+   FROM compra.letra
+  WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text
+  GROUP BY letra.iddeuda) ll ON ll.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_pagado, letra.iddeuda, max(letra.fecha_cancelado) AS ultimo_pago
+   FROM compra.letra
+  WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'S'::text
+  GROUP BY letra.iddeuda) a ON a.iddeuda = d.iddeuda
+   JOIN general.moneda m ON m.idmoneda = d.idmoneda
+  GROUP BY d.iddeuda, compra.proveedor, compra.ruc, l.monto_deuda, l.fecha_venc, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric), m.descripcion, m.abreviatura, ll.monto_deuda;
+
+ALTER TABLE compra.deuda_view
+  OWNER TO postgres;
+  
+------- OK
+
+
+
+-- new vistas deudas proveedor
+CREATE OR REPLACE VIEW compra.proveedor_deudas_view AS 
+ SELECT DISTINCT p.idproveedor, p.nombre AS proveedor
+ ,p.ruc
+ ,p.estado
+   FROM compra.proveedor p
+   WHERE p.idproveedor IN (SELECT idproveedor FROM compra.compra WHERE idtipoventa=2 AND estado='A')
+  ORDER BY p.nombre;
+
+ALTER TABLE compra.proveedor_deudas_view
+  OWNER TO postgres;
+  
+  
+-- 
+CREATE OR REPLACE VIEW almacen.view_productos_stock AS 
+ SELECT DISTINCT view_stock.idproducto, view_stock.producto, view_stock.producto_detallado, view_stock.marca, view_stock.modelo, view_stock.categoria, view_stock.idmarca, view_stock.idmodelo
+   FROM almacen.view_stock
+  ORDER BY view_stock.producto;
+
+ALTER TABLE almacen.view_productos_stock
+  OWNER TO postgres;
+  
+--
+CREATE OR REPLACE VIEW compra.compra_deuda_view AS 
+ SELECT cd.iddeuda, cd.idcompra, c.idproveedor, c.comprobante, c.proveedor, c.ruc,d.pagado
+   FROM compra.compra_deuda cd
+   JOIN compra.deuda d ON d.iddeuda = cd.iddeuda
+   JOIN compra.compra_view c ON c.idcompra = cd.idcompra;
+
+ALTER TABLE compra.compra_deuda_view
+  OWNER TO postgres;
+  
+  
+-- campos para reportes en cliente
+-- View: venta.venta_view
+
+-- DROP VIEW venta.venta_view;
+
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT DISTINCT ON (v.idventa) v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, COALESCE(v.subtotal, 0::double precision) + COALESCE(v.igv::double precision, 0::double precision) - COALESCE(v.descuento::double precision, 0::double precision) AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion, 
+        CASE
+            WHEN COALESCE(nc.idventa::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_notacredito, 
+        CASE
+            WHEN COALESCE(gr.idreferencia::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_guia, (COALESCE(vendedor.appat::text || ' '::text, ''::text) || COALESCE(vendedor.apmat::text || ' '::text, ''::text)) || COALESCE(vendedor.nombres)::text AS vendedor, vendedor.usuario, COALESCE(vendedor.nombres) AS nombre_vendedor, c.idzona, pv.idmodalidad, m.abreviatura AS moneda_corto, z.zona
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   LEFT JOIN general.zona z ON z.idzona = c.idzona
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa = v.idventa AND nc.estado = 'A'::bpchar AND v.estado <> 'I'::bpchar
+   LEFT JOIN almacen.guia_remision gr ON gr.idreferencia = v.idventa AND gr.referencia::text = 'V'::text AND gr.estado::bpchar = 'A'::bpchar AND gr.estado::bpchar <> 'I'::bpchar
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario = v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   LEFT JOIN venta.preventa pv ON pv.idpreventa = v.idpreventa;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+  
+------- OK
+
+-------------------------------------------------- 19/07/2017 ---------------------------------------------------
+CREATE OR REPLACE VIEW venta.cliente_view AS 
+ SELECT c.idcliente, btrim(COALESCE(c.apellidos::text || ' '::text, ''::text) || c.nombres::text) AS cliente, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, count(cred.idcredito) AS cant_cred, c.estado, 
+        CASE
+            WHEN c.tipo = 'J'::bpchar THEN 'RUC: '::text || c.ruc::text
+            ELSE 'DNI: '::text || c.dni::text
+        END AS documento_cliente, 
+        CASE
+            WHEN c.tipo = 'N'::bpchar THEN 'NATURAL'::text
+            ELSE 'JURIDICO'::text
+        END AS tipo_cliente, c.linea_credito, zona.zona, c.idzona, c.direccion_principal AS direccion, c.bloqueado, c.limite_credito, ct.telefono
+,c.observacion
+,e.descripcion estado_civil
+,oc.ocupacion
+,sit.descripcion situacion_laboral
+,c.fecha_nac
+,to_char(c.fecha_nac,'DD/MM/YYYY') fecha_nacimiento
+,c.sexo
+   FROM venta.cliente c
+   LEFT JOIN ( SELECT cliente_telefono.idcliente, array_to_string(array_agg(cliente_telefono.telefono), ', '::text) AS telefono
+           FROM venta.cliente_telefono
+          WHERE cliente_telefono.estado = 'A'::bpchar
+          GROUP BY cliente_telefono.idcliente) ct ON ct.idcliente = c.idcliente
+   LEFT JOIN credito.credito cred ON cred.idcliente = c.idcliente
+   LEFT JOIN general.zona ON zona.idzona = c.idzona
+   LEFT JOIN general.estado_civil e ON e.idestado_civil=c.idestado_civil
+   LEFT JOIN general.sit_laboral sit ON sit.idsit_laboral=c.idsit_laboral
+   LEFT JOIN general.ocupacion oc ON oc.idocupacion=c.idocupacion
+  GROUP BY c.idcliente, c.apellidos, c.nombres, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, c.estado, zona.zona, c.idzona, ct.telefono
+,estado_civil,ocupacion,situacion_laboral
+  ;
+
+ALTER TABLE venta.cliente_view
+  OWNER TO postgres;
+  
+-- campo para ver si el usuario accede a todas las sucursales en los reportes
+alter table seguridad.acceso_empresa add column control_reporte character(1) DEFAULT 'N';
+COMMENT ON COLUMN seguridad.acceso_empresa.control_reporte IS 'campo para ver si el usuario puede acceder a todas las sucursales en los reportes';
+
+
+-- OK
+
+
+------------------------------------------------ 20/07/2017 -----------------------------------------------
+-- añadiendo simbolo de moneda
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT DISTINCT ON (v.idventa) v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, COALESCE(v.subtotal, 0::double precision) + COALESCE(v.igv::double precision, 0::double precision) - COALESCE(v.descuento::double precision, 0::double precision) AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion, 
+        CASE
+            WHEN COALESCE(nc.idventa::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_notacredito, 
+        CASE
+            WHEN COALESCE(gr.idreferencia::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_guia, (COALESCE(vendedor.appat::text || ' '::text, ''::text) || COALESCE(vendedor.apmat::text || ' '::text, ''::text)) || COALESCE(vendedor.nombres)::text AS vendedor, vendedor.usuario, COALESCE(vendedor.nombres) AS nombre_vendedor, c.idzona, pv.idmodalidad, m.abreviatura AS moneda_corto
+        , z.zona
+	,m.simbolo simbolo_moneda
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   LEFT JOIN general.zona z ON z.idzona = c.idzona
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa = v.idventa AND nc.estado = 'A'::bpchar AND v.estado <> 'I'::bpchar
+   LEFT JOIN almacen.guia_remision gr ON gr.idreferencia = v.idventa AND gr.referencia::text = 'V'::text AND gr.estado::bpchar = 'A'::bpchar AND gr.estado::bpchar <> 'I'::bpchar
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario = v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   LEFT JOIN venta.preventa pv ON pv.idpreventa = v.idpreventa;
+
+ALTER TABLE venta.venta_view
+OWNER TO postgres;
+
+
+-- campo descuento en deuda
+alter table compra.deuda add column descuento numeric(10,2) DEFAULT 0.00;
+
+-- añadiendo descuento en la vista deuda
+CREATE OR REPLACE VIEW compra.deuda_view AS 
+ SELECT d.iddeuda, d.idmoneda, d.idsucursal, d.idusuario, d.nro_credito, d.cant_letras, d.monto, d.gastos, d.pagado, d.fecha_deuda, d.fecha_registro, d.hora_registro, d.estado, array_to_string(array_agg(compra.comprobante), ','::text) AS comprobante, compra.proveedor, compra.ruc, COALESCE(l.monto_deuda, 0::numeric) AS monto_deuda, l.fecha_venc, to_char(l.fecha_venc::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_vencimiento, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric) AS monto_cancelado, 
+        CASE
+            WHEN COALESCE(a.monto_pagado, 0::numeric) > 0::numeric THEN true
+            ELSE false
+        END AS has_amortizado, d.idproveedor, m.descripcion AS moneda, m.abreviatura AS moneda_corto
+,d.descuento
+   FROM compra.deuda d
+   JOIN ( SELECT c.comprobante, cd.iddeuda, c.proveedor, c.ruc
+           FROM compra.compra_deuda cd
+      JOIN compra.compra_view c ON c.idcompra = cd.idcompra) compra ON compra.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_deuda, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+      FROM compra.letra
+     WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text AND letra.fecha_vencimiento < 'now'::text::date
+     GROUP BY letra.iddeuda) l ON l.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_pagado, letra.iddeuda, max(letra.fecha_cancelado) AS ultimo_pago
+   FROM compra.letra
+  WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'S'::text
+  GROUP BY letra.iddeuda) a ON a.iddeuda = d.iddeuda
+   JOIN general.moneda m ON m.idmoneda = d.idmoneda
+  GROUP BY d.iddeuda, compra.proveedor, compra.ruc, l.monto_deuda, l.fecha_venc, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric), m.descripcion, m.abreviatura;
+
+ALTER TABLE compra.deuda_view
+  OWNER TO postgres;
+  
+  
+  
+-- OK
+
+  
+  
+-- campo estado ubigeo sorsa
+alter table general.ubigeosorsa add column estado character(1) DEFAULT 'A';
+ALTER TABLE general.ubigeosorsa ALTER COLUMN idubigeo TYPE character varying(6);
+
+
+-- vista de winser que no se dio la molestia de subir a los cambios
+CREATE OR REPLACE VIEW general.view_localidad AS 
+ SELECT z.idzona,
+    u.descripcion AS ruta,
+    z.zona,
+    z.estado
+	,z.idubigeo
+   FROM general.zona z
+     JOIN general.ubigeosorsa u ON z.idubigeo::bpchar = u.idubigeo
+  WHERE z.estado = 'A'::bpchar;
+
+ALTER TABLE general.view_localidad
+  OWNER TO postgres;
+
+  
+--
+CREATE OR REPLACE VIEW venta.cliente_view AS 
+ SELECT c.idcliente, btrim(COALESCE(c.apellidos::text || ' '::text, ''::text) || c.nombres::text) AS cliente, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, count(cred.idcredito) AS cant_cred, c.estado, 
+        CASE
+            WHEN c.tipo = 'J'::bpchar THEN 'RUC: '::text || c.ruc::text
+            ELSE 'DNI: '::text || c.dni::text
+        END AS documento_cliente, 
+        CASE
+            WHEN c.tipo = 'N'::bpchar THEN 'NATURAL'::text
+            ELSE 'JURIDICO'::text
+        END AS tipo_cliente, c.linea_credito, zona.zona, c.idzona, c.direccion_principal AS direccion, c.bloqueado, c.limite_credito, ct.telefono, c.observacion, e.descripcion AS estado_civil, oc.ocupacion, sit.descripcion AS situacion_laboral, c.fecha_nac, to_char(c.fecha_nac, 'DD/MM/YYYY'::text) AS fecha_nacimiento, c.sexo
+,zona.idubigeo
+   FROM venta.cliente c
+   LEFT JOIN ( SELECT cliente_telefono.idcliente, array_to_string(array_agg(cliente_telefono.telefono), ', '::text) AS telefono
+           FROM venta.cliente_telefono
+          WHERE cliente_telefono.estado = 'A'::bpchar
+          GROUP BY cliente_telefono.idcliente) ct ON ct.idcliente = c.idcliente
+   LEFT JOIN credito.credito cred ON cred.idcliente = c.idcliente
+   LEFT JOIN general.zona ON zona.idzona = c.idzona
+   LEFT JOIN general.estado_civil e ON e.idestado_civil = c.idestado_civil
+   LEFT JOIN general.sit_laboral sit ON sit.idsit_laboral = c.idsit_laboral
+   LEFT JOIN general.ocupacion oc ON oc.idocupacion = c.idocupacion
+  GROUP BY c.idcliente, c.apellidos, c.nombres, c.dni, c.ruc, c.cliente_email, c.tipo, c.foto, c.especial, c.estado, zona.zona, c.idzona, ct.telefono, e.descripcion, oc.ocupacion, sit.descripcion,zona.idubigeo;
+
+ALTER TABLE venta.cliente_view
+  OWNER TO postgres;
+
+  
+-- añadiendo idubigeo a la vista
+
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT DISTINCT ON (v.idventa) v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, COALESCE(v.subtotal, 0::double precision) + COALESCE(v.igv::double precision, 0::double precision) - COALESCE(v.descuento::double precision, 0::double precision) AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion, 
+        CASE
+            WHEN COALESCE(nc.idventa::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_notacredito, 
+        CASE
+            WHEN COALESCE(gr.idreferencia::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_guia, (COALESCE(vendedor.appat::text || ' '::text, ''::text) || COALESCE(vendedor.apmat::text || ' '::text, ''::text)) || COALESCE(vendedor.nombres)::text AS vendedor, vendedor.usuario, COALESCE(vendedor.nombres) AS nombre_vendedor, c.idzona, pv.idmodalidad, m.abreviatura AS moneda_corto, z.zona, m.simbolo AS simbolo_moneda
+,z.idubigeo
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   LEFT JOIN general.zona z ON z.idzona = c.idzona
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa = v.idventa AND nc.estado = 'A'::bpchar AND v.estado <> 'I'::bpchar
+   LEFT JOIN almacen.guia_remision gr ON gr.idreferencia = v.idventa AND gr.referencia::text = 'V'::text AND gr.estado::bpchar = 'A'::bpchar AND gr.estado::bpchar <> 'I'::bpchar
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario = v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   LEFT JOIN venta.preventa pv ON pv.idpreventa = v.idpreventa;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+  
+-- añadiendo campo idzona e idubigeo a la vista
+CREATE OR REPLACE VIEW venta.venta_detalle_view AS 
+ SELECT DISTINCT dv.idventa, dv.descripcion AS producto, u.descripcion AS unidadmedida, v.fecha_venta AS fecha_operacion, v.fecha_venta, COALESCE(cli.nombres::text || ' '::text, ''::text) || COALESCE(cli.apellidos, ''::character varying)::text AS cliente, tp.descripcion AS tipopago, suc.descripcion AS sucursal, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen, v.correlativo AS numero, v.serie, v.idcliente, v.idsucursal, v.idtipoventa, v.idtipodocumento, v.idmoneda, v.idtipopago, v.estado, v.subtotal AS subtotal_venta, v.igv AS igv_venta, v.descuento AS descuento_venta, td.abreviatura AS simbolo_tipodoc, dv.idproducto, prod.idlinea, prod.idmodelo, prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dv.precio AS precio_venta_detalle, dv.costo AS precio_costo_detalle, dv.cantidad AS cantidad_detalle, v.cambio_moneda, COALESCE(dv.cantidad, 0::numeric::double precision) * 
+        CASE
+            WHEN dv.oferta::text = 'N'::text THEN dv.precio
+            ELSE 0::double precision
+        END AS subtotal, v.idvendedor, (COALESCE(emp.nombres::text || ' '::text, ''::text) || COALESCE(emp.appat::text || ' '::text, ''::text)) || COALESCE(emp.apmat, ''::character varying)::text AS vendedor, emp.usuario, v.idusuario, usu.nombres AS cajero, emp.nombres AS vendedor_nombre, emp.appat AS vendedor_appat, marca.descripcion AS marca, modelo.descripcion AS modelo, linea.descripcion AS linea, categoria.descripcion AS categoria, COALESCE(cli.apellidos, ''::character varying)::text || COALESCE(cli.nombres::text || ' '::text, ''::text) AS cliente_apellidos, dv.oferta, u.abreviatura AS um, COALESCE(prod.factor, 0::numeric) AS factor, COALESCE(prod.factor, 0::numeric)::double precision * dv.cantidad AS fac_galon
+,z.idzona
+,z.idubigeo
+,z.zona
+,z.ruta
+   FROM venta.detalle_venta dv
+   JOIN venta.venta v ON v.idventa = dv.idventa
+   JOIN compra.producto prod ON prod.idproducto = dv.idproducto
+   JOIN general.marca ON marca.idmarca = prod.idmarca
+   JOIN general.modelo ON modelo.idmodelo = prod.idmodelo
+   JOIN general.linea ON linea.idlinea = prod.idlinea
+   JOIN general.categoria ON categoria.idcategoria = prod.idcategoria
+   JOIN compra.unidad u ON u.idunidad = dv.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN venta.cliente cli ON cli.idcliente = v.idcliente
+	LEFT JOIN general.view_localidad z ON z.idzona = cli.idzona   
+   JOIN seguridad.sucursal suc ON suc.idsucursal = v.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = v.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = v.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = v.idtipopago
+   JOIN seguridad.usuario emp ON emp.idusuario = v.idvendedor;
+
+ALTER TABLE venta.venta_detalle_view
+  OWNER TO postgres;
+  
+-- añadiendo campo idzona e idubigeo a la vista
+CREATE OR REPLACE VIEW venta.venta_head_view AS 
+ SELECT venta_detalle_view.idventa, venta_detalle_view.fecha_operacion, venta_detalle_view.fecha_venta, btrim(venta_detalle_view.cliente) AS cliente, venta_detalle_view.tipopago, venta_detalle_view.sucursal, venta_detalle_view.tipoventa, venta_detalle_view.moneda AS msimbolo, venta_detalle_view.abreviatura, venta_detalle_view.tipodocumento, venta_detalle_view.almacen, venta_detalle_view.serie, venta_detalle_view.numero, venta_detalle_view.idcliente, venta_detalle_view.idsucursal, venta_detalle_view.idtipoventa, venta_detalle_view.idtipodocumento, venta_detalle_view.idtipopago, venta_detalle_view.estado, venta_detalle_view.subtotal_venta, venta_detalle_view.igv_venta, venta_detalle_view.simbolo_tipodoc, venta_detalle_view.idmoneda, venta_detalle_view.vendedor, venta_detalle_view.idvendedor
+,idzona,idubigeo
+   FROM venta.venta_detalle_view
+  GROUP BY venta_detalle_view.idventa, venta_detalle_view.fecha_operacion, venta_detalle_view.fecha_venta, venta_detalle_view.cliente, venta_detalle_view.tipopago, venta_detalle_view.sucursal, venta_detalle_view.tipoventa, venta_detalle_view.moneda, venta_detalle_view.simbolo, venta_detalle_view.abreviatura, venta_detalle_view.tipodocumento, venta_detalle_view.almacen, venta_detalle_view.serie, venta_detalle_view.numero, venta_detalle_view.idcliente, venta_detalle_view.idsucursal, venta_detalle_view.idtipoventa, venta_detalle_view.idtipodocumento, venta_detalle_view.idtipopago, venta_detalle_view.estado, venta_detalle_view.subtotal_venta, venta_detalle_view.igv_venta, venta_detalle_view.simbolo_tipodoc, venta_detalle_view.idmoneda, venta_detalle_view.vendedor, venta_detalle_view.idvendedor
+  ,idzona,idubigeo;
+
+ALTER TABLE venta.venta_head_view
+  OWNER TO postgres;
+
+  
+  
+  
+------------------------------------------------------- 21/07/2017 ------------------------------
+-- mejorando vista deuda
+CREATE OR REPLACE VIEW compra.deuda_view AS 
+ SELECT d.iddeuda, d.idmoneda, d.idsucursal, d.idusuario, d.nro_credito, d.cant_letras, d.monto, d.gastos, d.pagado, d.fecha_deuda, d.fecha_registro, d.hora_registro, d.estado, array_to_string(array_agg(compra.comprobante), ','::text) AS comprobante, compra.proveedor, compra.ruc, COALESCE(l.monto_deuda, 0::numeric) AS monto_deuda, l.fecha_venc, to_char(l.fecha_venc::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_vencimiento, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric) AS monto_cancelado, 
+        CASE
+            WHEN COALESCE(a.monto_pagado, 0::numeric) > 0::numeric THEN true
+            ELSE false
+        END AS has_amortizado, d.idproveedor, m.descripcion AS moneda, m.abreviatura AS moneda_corto, d.descuento
+        ,COALESCE(monto_pendiente_pago,0) monto_pendiente
+   FROM compra.deuda d
+   JOIN ( SELECT c.comprobante, cd.iddeuda, c.proveedor, c.ruc
+           FROM compra.compra_deuda cd
+      JOIN compra.compra_view c ON c.idcompra = cd.idcompra) compra ON compra.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_deuda, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+      FROM compra.letra
+     WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text AND letra.fecha_vencimiento < 'now'::text::date AND letra.estado='A'
+     GROUP BY letra.iddeuda) l ON l.iddeuda = d.iddeuda
+
+LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_pendiente_pago, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+      FROM compra.letra
+     WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text AND letra.estado='A'
+     GROUP BY letra.iddeuda) lt ON lt.iddeuda = d.iddeuda
+     
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_pagado, letra.iddeuda, max(letra.fecha_cancelado) AS ultimo_pago
+   FROM compra.letra
+  WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'S'::text
+  GROUP BY letra.iddeuda) a ON a.iddeuda = d.iddeuda
+   JOIN general.moneda m ON m.idmoneda = d.idmoneda
+   WHERE d.iddeuda=338
+  GROUP BY d.iddeuda, compra.proveedor, compra.ruc, l.monto_deuda, l.fecha_venc, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric), m.descripcion, m.abreviatura,monto_pendiente;
+
+ALTER TABLE compra.deuda_view
+  OWNER TO postgres;
+
+  
+--OK  
+  
+  
+  
+------------------------------------------------------- 22/07/2017 ------------------------------
+
+CREATE OR REPLACE VIEW general.view_cuentas_bancarias AS 
+ SELECT cb.idcuentas_bancarias, cb.idbanco, cb.idsucursal, cb.nro_cuenta, cb.fecha_registro, cb.hora_registro, cb.estado, cb.idmoneda, (((b.abreviatura::text || ' -'::text) || m.abreviatura::text) || '- '::text) || cb.nro_cuenta::text AS cuenta, m.descripcion AS moneda, sucursal.descripcion AS sucursal, b.banco, m.valor_cambio
+,m.abreviatura moneda_corto
+,m.simbolo simbolo_moneda
+   FROM general.cuentas_bancarias cb
+   JOIN general.banco b ON b.idbanco = cb.idbanco
+   JOIN general.moneda m ON m.idmoneda = cb.idmoneda
+   JOIN seguridad.sucursal ON sucursal.idsucursal = cb.idsucursal;
+
+ALTER TABLE general.view_cuentas_bancarias
+  OWNER TO postgres;
+  
+
+ALTER TABLE venta.movimiento_deposito ALTER COLUMN cambio_moneda TYPE numeric(10,3) DEFAULT 0.00,;
+ALTER TABLE venta.movimiento_deposito ALTER COLUMN idmoneda TYPE integer;
+ALTER TABLE venta.movimiento_deposito ALTER COLUMN monto_convertido TYPE double precision;
+ALTER TABLE venta.movimiento_deposito ADD COLUMN idconceptomovimiento  integer;
+
+-- corrigiendo vista
+CREATE OR REPLACE VIEW compra.proveedor_deudas_view AS 
+ SELECT DISTINCT p.idproveedor, p.nombre AS proveedor, p.ruc, p.estado
+   FROM compra.proveedor p
+  WHERE (p.idproveedor IN ( SELECT compra.idproveedor
+           FROM compra.compra
+          WHERE compra.idtipoventa = 2 AND compra.estado = 'A'::bpchar AND idcompra NOT IN (SELECT idcompra FROM compra.compra_deuda )))
+  ORDER BY p.nombre;
+
+ALTER TABLE compra.proveedor_deudas_view
+  OWNER TO postgres;
+  
+COMMENT ON COLUMN compra.deuda.idmoneda IS 'Id moneda de las compras relacionadas a la deuda';
+ALTER TABLE compra.deuda ADD COLUMN id_moneda_deuda integer;
+COMMENT ON COLUMN compra.deuda.id_moneda_deuda IS 'Id moneda de la deuda';
+ALTER TABLE compra.deuda ADD COLUMN cambio_moneda numeric(10,3);
+ALTER TABLE compra.deuda ADD COLUMN total_convertido double precision;
+ALTER TABLE compra.deuda ADD COLUMN total_facturado double precision;
+
+
+CREATE OR REPLACE VIEW compra.deuda_view AS 
+ SELECT d.iddeuda, d.idmoneda, d.idsucursal, d.idusuario, d.nro_credito, d.cant_letras, d.monto, d.gastos, d.pagado, d.fecha_deuda, d.fecha_registro, d.hora_registro, d.estado, array_to_string(array_agg(compra.comprobante), ','::text) AS comprobante, compra.proveedor, compra.ruc, COALESCE(l.monto_deuda, 0::numeric) AS monto_deuda, l.fecha_venc, to_char(l.fecha_venc::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_vencimiento, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric) AS monto_cancelado, 
+        CASE
+            WHEN COALESCE(a.monto_pagado, 0::numeric) > 0::numeric THEN true
+            ELSE false
+        END AS has_amortizado, d.idproveedor, m.descripcion AS moneda, m.abreviatura AS moneda_corto, d.descuento, COALESCE(lt.monto_pendiente_pago, 0::numeric) AS monto_pendiente, m.valor_cambio
+,d.id_moneda_deuda
+,d.cambio_moneda
+,d.total_convertido
+,d.total_facturado
+   FROM compra.deuda d
+   JOIN ( SELECT c.comprobante, cd.iddeuda, c.proveedor, c.ruc
+           FROM compra.compra_deuda cd
+      JOIN compra.compra_view c ON c.idcompra = cd.idcompra) compra ON compra.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_deuda, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+      FROM compra.letra
+     WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text AND letra.fecha_vencimiento < 'now'::text::date AND letra.estado = 'A'::bpchar
+     GROUP BY letra.iddeuda) l ON l.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_pendiente_pago, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+   FROM compra.letra
+  WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text AND letra.estado = 'A'::bpchar
+  GROUP BY letra.iddeuda) lt ON lt.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_pagado, letra.iddeuda, max(letra.fecha_cancelado) AS ultimo_pago
+   FROM compra.letra
+  WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'S'::text
+  GROUP BY letra.iddeuda) a ON a.iddeuda = d.iddeuda
+   JOIN general.moneda m ON m.idmoneda = d.idmoneda
+  GROUP BY d.iddeuda, compra.proveedor, compra.ruc, l.monto_deuda, l.fecha_venc, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric), m.descripcion, m.abreviatura, COALESCE(lt.monto_pendiente_pago, 0::numeric), m.valor_cambio;
+
+ALTER TABLE compra.deuda_view
+  OWNER TO postgres;
+  
+  
+  
+  
+------------------------------------------------------- 27/07/2017 ------------------------------
+-- nueva vista de proveedores con deuda
+CREATE OR REPLACE VIEW compra.proveedores_deuda_view AS 
+ SELECT DISTINCT d.idproveedor,nombre proveedor,ruc,direccion,email
+   FROM compra.deuda d
+   JOIN compra.proveedor p ON p.idproveedor = d.idproveedor
+  ORDER BY proveedor;
+
+ALTER TABLE compra.proveedores_deuda_view
+  OWNER TO postgres;
+  
+
+  
+-- add tipodocumento
+CREATE OR REPLACE VIEW compra.compra_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, tv.descripcion AS tipoventa, m.abreviatura AS moneda, m.simbolo, t.descripcion AS tipo_documento, COALESCE(c.serie::text || '-'::text, ''::text) || c.numero::text AS nrodocumento, c.subtotal, COALESCE(c.descuento, 0.00) AS descuento, c.igv, c.subtotal + c.igv - COALESCE(c.descuento, 0.00) AS total, c.estado, c.recepcionado, c.fecha_compra, to_char(c.fecha_compra::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idsucursal, p.ruc, (COALESCE(t.abreviatura::text || '-'::text, ''::text) || COALESCE(c.serie::text || '-'::text, ''::text)) || c.numero::text AS comprobante, c.idproveedor, tv.idtipoventa, c.idmoneda
+,c.idtipodocumento
+,c.serie
+,c.numero
+   FROM compra.compra c
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+ALTER TABLE compra.compra_view
+  OWNER TO postgres;
+  
+  
+-- add campos en vista
+CREATE OR REPLACE VIEW compra.deuda_view AS 
+ SELECT d.iddeuda, d.idmoneda, d.idsucursal, d.idusuario, d.nro_credito, d.cant_letras, d.monto, d.gastos, d.pagado, d.fecha_deuda, d.fecha_registro, d.hora_registro
+ , d.estado
+ , array_to_string(array_agg(compra.comprobante), ','::text) AS comprobante
+ , compra.proveedor, compra.ruc
+ , COALESCE(l.monto_deuda, 0::numeric) AS monto_deuda, l.fecha_venc, to_char(l.fecha_venc::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_vencimiento
+ , a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric) AS monto_cancelado, 
+        CASE
+            WHEN COALESCE(a.monto_pagado, 0::numeric) > 0::numeric THEN true
+            ELSE false
+        END AS has_amortizado, d.idproveedor, m.descripcion AS moneda, m.abreviatura AS moneda_corto, d.descuento, COALESCE(lt.monto_pendiente_pago, 0::numeric) AS monto_pendiente, m.valor_cambio
+,d.id_moneda_deuda
+,d.cambio_moneda
+,d.total_convertido
+,d.total_facturado
+, array_to_string(array_agg(compra.idtipodocumento), ','::text) AS idtipodocumento_compra
+, array_to_string(array_agg(compra.serie), ','::text) AS serie_compra
+, array_to_string(array_agg(compra.numero), ','::text) AS numero_compra
+   FROM compra.deuda d
+   JOIN ( SELECT c.comprobante, cd.iddeuda, c.proveedor, c.ruc, c.idtipodocumento,c.serie,c.numero
+           FROM compra.compra_deuda cd
+	JOIN compra.compra_view c ON c.idcompra = cd.idcompra
+      ) compra ON compra.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_deuda, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+      FROM compra.letra
+     WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text AND letra.fecha_vencimiento < 'now'::text::date AND letra.estado = 'A'::bpchar
+     GROUP BY letra.iddeuda) l ON l.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_pendiente_pago, letra.iddeuda, min(letra.fecha_vencimiento) AS fecha_venc
+   FROM compra.letra
+  WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'N'::text AND letra.estado = 'A'::bpchar
+  GROUP BY letra.iddeuda) lt ON lt.iddeuda = d.iddeuda
+   LEFT JOIN ( SELECT sum(letra.monto_letra) AS monto_pagado, letra.iddeuda, max(letra.fecha_cancelado) AS ultimo_pago
+   FROM compra.letra
+  WHERE letra.estado = 'A'::bpchar AND letra.pagado::text = 'S'::text
+  GROUP BY letra.iddeuda) a ON a.iddeuda = d.iddeuda
+   JOIN general.moneda m ON m.idmoneda = d.idmoneda
+  GROUP BY d.iddeuda, compra.proveedor, compra.ruc, l.monto_deuda, l.fecha_venc, a.ultimo_pago, COALESCE(a.monto_pagado, 0::numeric), m.descripcion, m.abreviatura, COALESCE(lt.monto_pendiente_pago, 0::numeric), m.valor_cambio;
+
+ALTER TABLE compra.deuda_view
+  OWNER TO postgres;
+  
+  
+-- 9:22 pm
+CREATE OR REPLACE VIEW compra.compra_deuda_view AS 
+ SELECT cd.iddeuda, cd.idcompra, c.idproveedor, c.comprobante, c.proveedor, c.ruc, d.pagado,d.idmoneda
+   FROM compra.compra_deuda cd
+   JOIN compra.deuda d ON d.iddeuda = cd.iddeuda
+   JOIN compra.compra_view c ON c.idcompra = cd.idcompra;
+
+ALTER TABLE compra.compra_deuda_view
+  OWNER TO postgres;
+
+  
+-- OK 12:21 am
+
+------------------------------------------------------- 28/07/2017 ------------------------------
+-- añadiendo campo rampa a la vista
+CREATE OR REPLACE VIEW venta.preventa_view AS 
+ SELECT p.idpreventa, p.idcliente, p.idsucursal, p.idtipoventa, p.idusuario, p.fecha, p.estado, p.idtipodocumento, p.idalmacen, p.subtotal, p.valor_igv, p.igv, p.descuento, p.idvendedor, p.idmecanico, p.idmoneda, p.pendiente, tv.descripcion AS tipoventa, td.descripcion AS tipodocumento, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, m.descripcion AS moneda, p.subtotal + p.igv - p.descuento AS total, p.serie, m.abreviatura AS moneda_abreviatura, c.dni, c.ruc, td.ruc_obligatorio, td.dni_obligatorio, p.codtipo_operacion, btrim((COALESCE(u.appat::text || ' '::text, ''::text) || u.apmat::text) || ' '::text, ''::text) || u.nombres::text AS vendedor, btrim((COALESCE(us.appat::text || ' '::text, ''::text) || us.apmat::text) || ' '::text, ''::text) || us.nombres::text AS mecanico, COALESCE(ram.descripcion::text, '-'::text) AS rampa, mi.modalidad, td.abreviatura AS td_documento, u.nombres::text AS vendedor_nombre, COALESCE(us.nombres::text, ''::text) AS mecanico_nombre, p.idmodalidad
+,p.idrampa
+   FROM venta.preventa p
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = p.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = p.idtipodocumento
+   JOIN venta.cliente c ON c.idcliente = p.idcliente
+   JOIN seguridad.usuario u ON u.idusuario = p.idvendedor
+   JOIN general.moneda m ON m.idmoneda = p.idmoneda
+   LEFT JOIN seguridad.usuario us ON us.idusuario = p.idmecanico
+   LEFT JOIN venta.rampa ram ON ram.idrampa = p.idrampa
+   LEFT JOIN venta.modalidad mi ON mi.idmodalidad = p.idmodalidad;
+
+ALTER TABLE venta.preventa_view
+  OWNER TO postgres;
+  
+  
+-- optimizando la vista de venta
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT DISTINCT ON (v.idventa) v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, COALESCE(v.subtotal, 0::double precision) + COALESCE(v.igv::double precision, 0::double precision) - COALESCE(v.descuento::double precision, 0::double precision) AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion, 
+        CASE
+            WHEN COALESCE(nc.idventa::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_notacredito, 
+        CASE
+            WHEN COALESCE(gr.idreferencia::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_guia, (COALESCE(vendedor.appat::text || ' '::text, ''::text) || COALESCE(vendedor.apmat::text || ' '::text, ''::text)) || COALESCE(vendedor.nombres)::text AS vendedor
+        , CAST(COALESCE(vendedor.usuario,COALESCE(vendedor.nombres,'')) AS character varying(50)) usuario
+        , COALESCE(vendedor.nombres) AS nombre_vendedor
+        , c.idzona, pv.idmodalidad, m.abreviatura AS moneda_corto, z.zona, m.simbolo AS simbolo_moneda, z.idubigeo
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   LEFT JOIN general.zona z ON z.idzona = c.idzona
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa = v.idventa AND nc.estado = 'A'::bpchar AND v.estado <> 'I'::bpchar
+   LEFT JOIN almacen.guia_remision gr ON gr.idreferencia = v.idventa AND gr.referencia::text = 'V'::text AND gr.estado::bpchar = 'A'::bpchar AND gr.estado::bpchar <> 'I'::bpchar 
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario = v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   LEFT JOIN venta.preventa pv ON pv.idpreventa = v.idpreventa;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+  
+-- OK 03:25 pm
+
+
+------------------------------------------------------- 01/08/2017 ------------------------------
+-- añadiendo campo para controlar el cierre y arqueo de dinero en efectivo en las cajas
+alter table venta.tipopago add column afecta_caja character(1) DEFAULT 'N';
+
+-- añadiendo condicion del campo que controla los moviminetos de dinero en caja
+CREATE OR REPLACE FUNCTION caja.fn_tg_actualiza_saldocaja()
+  RETURNS trigger AS
+$BODY$
+
+		DECLARE saldo_caja double precision;
+
+		BEGIN
+
+				SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal 
+				AND (SELECT afecta_caja FROM venta.tipopago tp WHERE tp.idtipopago=NEW.idtipopago)='S';
+				
+				UPDATE caja.cierrecaja SET monto=saldo_caja WHERE idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal
+				AND (SELECT afecta_caja FROM venta.tipopago tp WHERE tp.idtipopago=NEW.idtipopago)='S';
+
+				IF (TG_OP = 'UPDATE') THEN
+					IF (OLD.idcaja <> NEW.idcaja) THEN
+						SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = OLD.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal
+						AND (SELECT afecta_caja FROM venta.tipopago tp WHERE tp.idtipopago=NEW.idtipopago)='S';
+
+						UPDATE caja.cierrecaja SET monto=saldo_caja WHERE idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal
+						AND (SELECT afecta_caja FROM venta.tipopago tp WHERE tp.idtipopago=NEW.idtipopago)='S';
+					END IF;
+				END IF;
+
+				RETURN NULL;
+		END;
+
+		$BODY$
+  LANGUAGE plpgsql VOLATILE
+  COST 100;
+ALTER FUNCTION caja.fn_tg_actualiza_saldocaja()
+  OWNER TO postgres;
+
+-- OK 04:15 am
+
+
+
+
+------------------------------------------------ 03/08/2017 -------------------------------
+-- campos para filtro en grilla de guia remision
+-- View: almacen.guia_remision_view
+
+-- DROP VIEW almacen.guia_remision_view;
+
+CREATE OR REPLACE VIEW almacen.guia_remision_view AS 
+ SELECT DISTINCT g.idguia_remision, (g.serie::text || '-'::text) || g.numero::text AS nroguia, g.fecha_traslado, m.descripcion AS motivo, g.destinatario, g.ruc_destinatario, g.dni_destinatario, g.punto_partida, g.punto_llegada, g.idsucursal, g.estado, g.finalizado, g.tipo_guia, g.idmotivo_guia, g.referencia, g.idreferencia, gg.idreferencia AS idd, 
+        CASE
+            WHEN gg.idreferencia IS NULL THEN 'N'::text
+            ELSE 'S'::text
+        END AS usado
+   FROM almacen.guia_remision g
+   JOIN almacen.motivo_guia m ON m.idmotivo_guia = g.idmotivo_guia
+   LEFT JOIN ( SELECT DISTINCT guia_remision.idreferencia, guia_remision.idsucursal, guia_remision.referencia
+      FROM almacen.guia_remision
+     WHERE guia_remision.estado::text = 'A'::text AND guia_remision.referencia::text = 'G'::text) gg ON gg.idsucursal <> g.idsucursal AND g.idguia_remision = gg.idreferencia AND g.tipo_guia::text = 'S'::text;
+
+ALTER TABLE almacen.guia_remision_view
+  OWNER TO postgres;
+-- OK 04:15 am
+
+------------------------------------------------ 05/08/2017 -------------------------------
+-- tabla para auditar cliente
+CREATE TABLE venta.auditar_cliente
+(
+  idauditar_cliente serial NOT NULL,
+  tabla text,
+  name_pk text,
+  valor_pk text,
+  fecha_registro date,
+  hora_registro time without time zone,
+  idsucursal integer,
+  idusuario integer,
+  ip_usuario text,
+  accion text,
+  desde text,
+  name_campo text,
+  valor_campo text,
+  estado character(1) DEFAULT 'A'::bpchar,
+  CONSTRAINT pk_auditar_cliente PRIMARY KEY (idauditar_cliente )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE venta.auditar_cliente
+  OWNER TO postgres;
+
+  
+-- corrigiendo trigger de caja
+CREATE OR REPLACE FUNCTION caja.fn_tg_actualiza_saldocaja()
+  RETURNS trigger AS
+$BODY$
+
+		DECLARE saldo_caja double precision;
+
+		BEGIN
+
+				SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal 
+				AND idtipopago IN (SELECT idtipopago FROM venta.tipopago tp WHERE afecta_caja='S');
+				
+				UPDATE caja.cierrecaja SET monto=saldo_caja WHERE idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal
+				;
+
+				IF (TG_OP = 'UPDATE') THEN
+					IF (OLD.idcaja <> NEW.idcaja) THEN
+						SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = OLD.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal
+						AND idtipopago IN (SELECT idtipopago FROM venta.tipopago tp WHERE afecta_caja='S');
+
+						UPDATE caja.cierrecaja SET monto=saldo_caja WHERE idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal
+						;
+					END IF;
+				END IF;
+
+				RETURN NULL;
+		END;
+
+		$BODY$
+  LANGUAGE plpgsql VOLATILE
+  COST 100;
+ALTER FUNCTION caja.fn_tg_actualiza_saldocaja()
+  OWNER TO postgres;
+
+  
+--OK 04:08 PM
+
+
+------------------------------------------------ 06/08/2017 -------------------------------
+-- esquema de prueba
+CREATE SCHEMA theme
+  AUTHORIZATION postgres;
+  
+-- tabla para los temas(test)
+CREATE TABLE theme.theme
+(
+  idtheme serial NOT NULL,
+  nombre text,
+  clase_settings text,
+  clase_skin text,
+  clase_theme text,
+  estado character(1) DEFAULT 'A'::bpchar,
+  CONSTRAINT pk_theme PRIMARY KEY (idtheme )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE theme.theme
+  OWNER TO postgres;
+  
+--OK 
+
+
+------------------------------------------------ 08/08/2017 -------------------------------
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT DISTINCT ON (v.idventa) v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, CAST(COALESCE(v.valor_igv,0) as numeric(10,2)) valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, COALESCE(v.subtotal, 0::double precision) + COALESCE(v.igv::double precision, 0::double precision) - COALESCE(v.descuento::double precision, 0::double precision) AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion, 
+        CASE
+            WHEN COALESCE(nc.idventa::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_notacredito, 
+        CASE
+            WHEN COALESCE(gr.idreferencia::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_guia, (COALESCE(vendedor.appat::text || ' '::text, ''::text) || COALESCE(vendedor.apmat::text || ' '::text, ''::text)) || COALESCE(vendedor.nombres)::text AS vendedor, COALESCE(vendedor.usuario, COALESCE(vendedor.nombres, ''::character varying))::character varying(50) AS usuario, COALESCE(vendedor.nombres) AS nombre_vendedor, c.idzona, pv.idmodalidad, m.abreviatura AS moneda_corto, z.zona, m.simbolo AS simbolo_moneda, z.idubigeo
+,v.fecha_venta fechaventa
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   LEFT JOIN general.zona z ON z.idzona = c.idzona
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa = v.idventa AND nc.estado = 'A'::bpchar AND v.estado <> 'I'::bpchar
+   LEFT JOIN almacen.guia_remision gr ON gr.idreferencia = v.idventa AND gr.referencia::text = 'V'::text AND gr.estado::bpchar = 'A'::bpchar AND gr.estado::bpchar <> 'I'::bpchar
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario = v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   LEFT JOIN venta.preventa pv ON pv.idpreventa = v.idpreventa;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+  
+--OK 02:16 pm
+
+
+------------------------------------------------ 09/08/2017 -------------------------------
+-- tabla session
+CREATE TABLE auditoria.sesion
+(
+  id serial NOT NULL,
+  idusuario integer,
+  idperfil integer,
+  idsucursal integer,
+  idempresa integer,
+  cookie character varying(10),
+  fecha date,
+  hora character varying(8),
+  estado character(1) DEFAULT 'A'::bpchar,
+  CONSTRAINT pksesion PRIMARY KEY (id )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE auditoria.sesion
+  OWNER TO postgres;
+--OK 09:48 am
+
+
+------------------------------------------------ 19/09/2017 -------------------------------
+-- añadiendo a las vistas idempresa
+CREATE OR REPLACE VIEW venta.venta_detalle_view AS 
+ SELECT DISTINCT dv.idventa, dv.descripcion AS producto, u.descripcion AS unidadmedida, v.fecha_venta AS fecha_operacion, v.fecha_venta, COALESCE(cli.nombres::text || ' '::text, ''::text) || COALESCE(cli.apellidos, ''::character varying)::text AS cliente, tp.descripcion AS tipopago, suc.descripcion AS sucursal, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen, v.correlativo AS numero, v.serie, v.idcliente, v.idsucursal, v.idtipoventa, v.idtipodocumento, v.idmoneda, v.idtipopago, v.estado, v.subtotal AS subtotal_venta, v.igv AS igv_venta, v.descuento AS descuento_venta, td.abreviatura AS simbolo_tipodoc, dv.idproducto, prod.idlinea, prod.idmodelo, prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dv.precio AS precio_venta_detalle, dv.costo AS precio_costo_detalle, dv.cantidad AS cantidad_detalle, v.cambio_moneda, COALESCE(dv.cantidad, 0::numeric::double precision) * 
+        CASE
+            WHEN dv.oferta::text = 'N'::text THEN dv.precio
+            ELSE 0::double precision
+        END AS subtotal, v.idvendedor, (COALESCE(emp.nombres::text || ' '::text, ''::text) || COALESCE(emp.appat::text || ' '::text, ''::text)) || COALESCE(emp.apmat, ''::character varying)::text AS vendedor, emp.usuario, v.idusuario, usu.nombres AS cajero, emp.nombres AS vendedor_nombre, emp.appat AS vendedor_appat, marca.descripcion AS marca, modelo.descripcion AS modelo, linea.descripcion AS linea, categoria.descripcion AS categoria, COALESCE(cli.apellidos, ''::character varying)::text || COALESCE(cli.nombres::text || ' '::text, ''::text) AS cliente_apellidos, dv.oferta, u.abreviatura AS um, COALESCE(prod.factor, 0::numeric) AS factor, COALESCE(prod.factor, 0::numeric)::double precision * dv.cantidad AS fac_galon, z.idzona, z.idubigeo, z.zona, z.ruta, v.idmodalidad
+,suc.idempresa
+   FROM venta.detalle_venta dv
+   JOIN venta.venta v ON v.idventa = dv.idventa
+   JOIN compra.producto prod ON prod.idproducto = dv.idproducto
+   JOIN general.marca ON marca.idmarca = prod.idmarca
+   JOIN general.modelo ON modelo.idmodelo = prod.idmodelo
+   JOIN general.linea ON linea.idlinea = prod.idlinea
+   JOIN general.categoria ON categoria.idcategoria = prod.idcategoria
+   JOIN compra.unidad u ON u.idunidad = dv.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN venta.cliente cli ON cli.idcliente = v.idcliente
+   LEFT JOIN general.view_localidad z ON z.idzona = cli.idzona
+   JOIN seguridad.sucursal suc ON suc.idsucursal = v.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = v.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = v.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = v.idtipopago
+   JOIN seguridad.usuario emp ON emp.idusuario = v.idvendedor;
+
+ALTER TABLE venta.venta_detalle_view
+  OWNER TO postgres;
+  
+  
+--
+CREATE OR REPLACE VIEW venta.venta_head_view AS 
+ SELECT venta_detalle_view.idventa, venta_detalle_view.fecha_operacion, venta_detalle_view.fecha_venta, btrim(venta_detalle_view.cliente) AS cliente, venta_detalle_view.tipopago, venta_detalle_view.sucursal, venta_detalle_view.tipoventa, venta_detalle_view.moneda AS msimbolo, venta_detalle_view.abreviatura, venta_detalle_view.tipodocumento, venta_detalle_view.almacen, venta_detalle_view.serie, venta_detalle_view.numero, venta_detalle_view.idcliente, venta_detalle_view.idsucursal, venta_detalle_view.idtipoventa, venta_detalle_view.idtipodocumento, venta_detalle_view.idtipopago, venta_detalle_view.estado, venta_detalle_view.subtotal_venta, venta_detalle_view.igv_venta, venta_detalle_view.simbolo_tipodoc, venta_detalle_view.idmoneda, venta_detalle_view.vendedor, venta_detalle_view.idvendedor, venta_detalle_view.idzona, venta_detalle_view.idubigeo, venta_detalle_view.idmodalidad
+,idempresa
+   FROM venta.venta_detalle_view
+  GROUP BY venta_detalle_view.idventa, venta_detalle_view.fecha_operacion, venta_detalle_view.fecha_venta, venta_detalle_view.cliente, venta_detalle_view.tipopago, venta_detalle_view.sucursal, venta_detalle_view.tipoventa, venta_detalle_view.moneda, venta_detalle_view.simbolo, venta_detalle_view.abreviatura, venta_detalle_view.tipodocumento, venta_detalle_view.almacen, venta_detalle_view.serie, venta_detalle_view.numero, venta_detalle_view.idcliente, venta_detalle_view.idsucursal, venta_detalle_view.idtipoventa, venta_detalle_view.idtipodocumento, venta_detalle_view.idtipopago, venta_detalle_view.estado, venta_detalle_view.subtotal_venta, venta_detalle_view.igv_venta, venta_detalle_view.simbolo_tipodoc, venta_detalle_view.idmoneda, venta_detalle_view.vendedor, venta_detalle_view.idvendedor, venta_detalle_view.idzona, venta_detalle_view.idubigeo, venta_detalle_view.idmodalidad,idempresa;
+
+ALTER TABLE venta.venta_head_view
+  OWNER TO postgres;
+  
+--
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT DISTINCT ON (v.idventa) v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, COALESCE(v.valor_igv, 0::numeric)::numeric(10,2) AS valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, COALESCE(v.subtotal, 0::double precision) + COALESCE(v.igv::double precision, 0::double precision) - COALESCE(v.descuento::double precision, 0::double precision) AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni, 
+        CASE
+            WHEN td.ruc_obligatorio = 'S'::bpchar THEN c.ruc
+            ELSE c.dni
+        END AS doc_cliente, td.ruc_obligatorio, td.dni_obligatorio, v.guias_remision, c.direccion_principal AS direccion, 
+        CASE
+            WHEN COALESCE(nc.idventa::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_notacredito, 
+        CASE
+            WHEN COALESCE(gr.idreferencia::text, ''::text) <> ''::text THEN 'S'::text
+            ELSE 'N'::text
+        END AS con_guia, (COALESCE(vendedor.appat::text || ' '::text, ''::text) || COALESCE(vendedor.apmat::text || ' '::text, ''::text)) || COALESCE(vendedor.nombres)::text AS vendedor, COALESCE(vendedor.usuario, COALESCE(vendedor.nombres, ''::character varying))::character varying(50) AS usuario, COALESCE(vendedor.nombres) AS nombre_vendedor, c.idzona, pv.idmodalidad, m.abreviatura AS moneda_corto, z.zona, m.simbolo AS simbolo_moneda, z.idubigeo, v.fecha_venta AS fechaventa
+,suc.idempresa
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   LEFT JOIN general.zona z ON z.idzona = c.idzona
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   LEFT JOIN venta.notacredito nc ON nc.idventa = v.idventa AND nc.estado = 'A'::bpchar AND v.estado <> 'I'::bpchar
+   LEFT JOIN almacen.guia_remision gr ON gr.idreferencia = v.idventa AND gr.referencia::text = 'V'::text AND gr.estado::bpchar = 'A'::bpchar AND gr.estado::bpchar <> 'I'::bpchar
+   JOIN seguridad.usuario vendedor ON vendedor.idusuario = v.idvendedor
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda
+   JOIN seguridad.sucursal suc ON suc.idsucursal=v.idsucursal
+   LEFT JOIN venta.preventa pv ON pv.idpreventa = v.idpreventa;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+  
+--
+CREATE OR REPLACE VIEW compra.compra_detalle_view AS 
+ SELECT dc.idcompra, prod.descripcion_detallada AS producto, u.descripcion AS unidadmedida, c.fecha_compra AS fecha_operacion, p.nombre AS proveedor, tp.descripcion AS tipopago, suc.descripcion AS sucursal, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, m.abreviatura, td.descripcion AS tipodocumento, al.descripcion AS almacen, c.numero, c.serie, c.idproveedor, c.idsucursal, c.idtipoventa, c.idtipodocumento, c.idmoneda, c.idtipopago, c.estado, c.nroguias, c.subtotal AS subtotal_compra, c.igv AS igv_compra, c.descuento AS descuento_compra, td.abreviatura AS simbolo_tipodoc, dc.idproducto, prod.idlinea, prod.idmodelo, prod.idcategoria, prod.idmarca, prod.idmaterial, prod.idcolor, dc.precio AS precio_detalle, dc.igv AS igv_detalle, dc.*::compra.detalle_compra AS dc, dc.flete AS flete_detalle, dc.gastos AS gastos_detalle, dc.cantidad AS cantidad_detalle, c.cambio_moneda
+,suc.idempresa
+   FROM compra.detalle_compra dc
+   JOIN compra.compra c ON c.idcompra = dc.idcompra
+   JOIN compra.producto prod ON prod.idproducto = dc.idproducto
+   JOIN compra.unidad u ON u.idunidad = dc.idunidad
+   JOIN venta.tipo_documento td ON td.idtipodocumento = c.idtipodocumento
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   JOIN seguridad.sucursal suc ON suc.idsucursal = c.idsucursal
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda
+   JOIN almacen.almacen al ON al.idalmacen = c.idalmacen
+   JOIN seguridad.usuario usu ON usu.idusuario = c.idusuario
+   LEFT JOIN venta.tipopago tp ON tp.idtipopago = c.idtipopago;
+
+ALTER TABLE compra.compra_detalle_view
+  OWNER TO postgres;
+  
+--
+CREATE OR REPLACE VIEW compra.compra_head_view AS 
+ SELECT compra_detalle_view.idcompra, compra_detalle_view.fecha_operacion, compra_detalle_view.proveedor, compra_detalle_view.tipopago, compra_detalle_view.sucursal, compra_detalle_view.tipoventa, compra_detalle_view.moneda AS msimbolo, compra_detalle_view.abreviatura, compra_detalle_view.tipodocumento, compra_detalle_view.almacen, compra_detalle_view.serie, compra_detalle_view.numero, compra_detalle_view.idproveedor, compra_detalle_view.idsucursal, compra_detalle_view.idtipoventa, compra_detalle_view.idtipodocumento, compra_detalle_view.idtipopago, compra_detalle_view.estado, compra_detalle_view.nroguias, compra_detalle_view.subtotal_compra, compra_detalle_view.igv_compra, compra_detalle_view.descuento_compra, compra_detalle_view.simbolo_tipodoc, compra_detalle_view.idmoneda
+,idempresa
+   FROM compra.compra_detalle_view
+  GROUP BY compra_detalle_view.idcompra, compra_detalle_view.fecha_operacion, compra_detalle_view.proveedor, compra_detalle_view.tipopago, compra_detalle_view.sucursal, compra_detalle_view.tipoventa, compra_detalle_view.moneda, compra_detalle_view.simbolo, compra_detalle_view.abreviatura, compra_detalle_view.tipodocumento, compra_detalle_view.almacen, compra_detalle_view.serie, compra_detalle_view.numero, compra_detalle_view.idproveedor, compra_detalle_view.idsucursal, compra_detalle_view.idtipoventa, compra_detalle_view.idtipodocumento, compra_detalle_view.idtipopago, compra_detalle_view.estado, compra_detalle_view.nroguias, compra_detalle_view.subtotal_compra, compra_detalle_view.igv_compra, compra_detalle_view.descuento_compra, compra_detalle_view.simbolo_tipodoc, compra_detalle_view.idmoneda,idempresa;
+
+ALTER TABLE compra.compra_head_view
+  OWNER TO postgres;
+  
+--
+CREATE OR REPLACE VIEW venta.comision_view AS 
+ SELECT v.idsucursal, dv.idventa, v.comprobante, v.idvendedor, a.idamortizacion, a.idrecibo_ingreso, v.fecha_venta, COALESCE(v.total) AS totventa, a.fecha_pago, date_part('year'::text, a.fecha_pago)::integer AS anio, date_part('month'::text, a.fecha_pago)::integer AS mes, a.monto, dv.cantidad * dv.precio + dv.igv AS totproducto, p.idmarca, a.fecha_pago - v.fecha_venta AS nrodias
+,v.idempresa
+   FROM credito.amortizacion a
+   JOIN credito.credito c ON c.idcredito = a.idcredito
+   JOIN venta.venta_view v ON v.idventa = c.idventa
+   JOIN venta.detalle_venta dv ON dv.idventa = c.idventa
+   JOIN compra.producto p ON p.idproducto = dv.idproducto;
+
+ALTER TABLE venta.comision_view
+  OWNER TO postgres;
+
+  
+------------------------------------------------ 22/09/2017 -------------------------------
+-- rediseñando vista recibo egreso
+CREATE OR REPLACE VIEW venta.reciboegreso_view AS 
+ SELECT r.idreciboegreso, r.serie, r.numero, r.tabla, r.idpersona, r.monto, r.idmoneda, r.tipocambio, r.fecha, r.hora, r.concepto, r.idtipopago, r.idamortizacion, r.idusuario, r.idsucursal, r.tipo_egreso, r.idconceptomovimiento, r.idtipodocumento_ref, r.idtipodocumento, r.serie_doc, r.numero_doc
+ , r.estado
+ ,c.cliente referencia 
+        , (r.serie::text || '-'::text) || r.numero::text AS recibo, r.idtipo_recibo
+   FROM venta.reciboegreso r
+   JOIN venta.cliente_view c ON COALESCE(c.idcliente,0)=r.idpersona
+   WHERE r.tabla='CLIENTE'
+
+   UNION
+   SELECT r.idreciboegreso, r.serie, r.numero, r.tabla, r.idpersona, r.monto, r.idmoneda, r.tipocambio, r.fecha, r.hora, r.concepto, r.idtipopago, r.idamortizacion, r.idusuario, r.idsucursal, r.tipo_egreso, r.idconceptomovimiento, r.idtipodocumento_ref, r.idtipodocumento, r.serie_doc, r.numero_doc
+ , r.estado
+ ,u.user_nombres referencia 
+        , (r.serie::text || '-'::text) || r.numero::text AS recibo, r.idtipo_recibo
+   FROM venta.reciboegreso r
+   JOIN seguridad.view_usuario u ON u.idusuario=r.idpersona
+   WHERE r.tabla='USUARIO';
+
+ALTER TABLE venta.reciboegreso_view
+  OWNER TO postgres;
+
+
+------------------------------------------------ 03/10/2017 -------------------------------------
+-- atributos para determinar si se ah usado los movimientos en el deposito de cirre de caja
+ALTER TABLE caja.detalle_caja ADD COLUMN en_deposito  character(1) DEFAULT 'N';
+ALTER TABLE venta.reciboegreso ADD COLUMN en_cierrecaja  character(1) DEFAULT 'N';

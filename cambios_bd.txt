@@ -1,0 +1,2286 @@
+﻿//////////////////////////////////////////////////////////////////////////
+  Poner aqui todos los cambios que hagan en la base de datos,
+  se debe indicar la fecha actual asi como el nombre del responsable.
+//////////////////////////////////////////////////////////////////////////
+
+11/12/2015 - jhon
+----------------------------------------------------
+* crear tabla tipo_documento:
+CREATE TABLE venta.tipo_documento
+(
+  idtipodocumento serial NOT NULL,
+  descripcion character varying(50),
+  fecha_registro timestamp without time zone,
+  estado character(1),
+  mostrar_en_compra character(1),
+  mostrar_en_venta character(1),
+  CONSTRAINT pk_tipodocumento PRIMARY KEY (idtipodocumento)
+)
+* eliminar campo [descripcion] de la tabla [compra.compra]
+* agregar campos en la tabla [compra.compra]:
+  idtipodocumento integer,
+  nrodocumento character varying(20),
+  nroguias character varying(100),
+  subtotal numeric(10,2),
+  igv numeric(10,2),
+  descuento numeric(10,2),
+  gastos numeric(10,2),
+
+  13/12/2015 - winser
+---------------------------------------------------
+agregar campos a la tabla compra.proveedor
+nombre character varying(250),
+  direccion character varying(200),
+  ruc character varying(15),
+  telefono character varying(15),
+  fecha_registro timestamp without time zone,
+  estado character(1) DEFAULT 1,
+  email character varying(300),
+
+  * crear la tabla compra.categoria_producto
+      CREATE TABLE compra.categoria_producto
+    (
+      idtipocategoria serial NOT NULL,
+      descripcion character varying(300),
+      CONSTRAINT pk_categoria_producto PRIMARY KEY (idtipocategoria)
+    )
+  * tabla compra.producto agregar campo categoria integer
+
+
+24/12/2015 - jhon
+-------------------------------------------------------------------
+* crear esquema [general]
+CREATE SCHEMA general
+
+* crear tabla [marca]
+CREATE TABLE general.marca
+(
+  idmarca serial NOT NULL,
+  descripcion character varying(50),
+  estado character(1),
+  CONSTRAINT pk_marca PRIMARY KEY (idmarca)
+)
+
+* crear tabla [modelo]
+CREATE TABLE general.modelo
+(
+  idmodelo serial NOT NULL,
+  idmarca integer,
+  descripcion character varying(50),
+  estado character(1),
+  CONSTRAINT pk_modelo PRIMARY KEY (idmodelo),
+  CONSTRAINT fk_modelo_marca FOREIGN KEY (idmarca)
+      REFERENCES general.marca (idmarca) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION
+)
+
+* crear campos en la tabla producto
+  idmarca integer,
+  idmodelo integer,
+  tipo character(1), -- P: producto | S: servicio
+  controla_serie character(1),
+  controla_stock character(1),
+
+* estructura final de la tabla producto
+CREATE TABLE compra.producto
+(
+  idproducto serial NOT NULL,
+  idunidad integer,
+  descripcion character varying(250),
+  stock_minimo integer,
+  precio_compra numeric(18,2),
+  estado character(1), -- 1 = activo...
+  idmarca integer,
+  idmodelo integer,
+  tipo character(1), -- P: producto | S: servicio
+  controla_serie character(1),
+  controla_stock character(1),
+  precio_mercado numeric(18,2),
+  ganancia_min numeric(10,2),
+  ganancia_medio numeric(10,2),
+  ganancia_max numeric(10,2),
+  CONSTRAINT pk_producto PRIMARY KEY (idproducto),
+  CONSTRAINT fk_producto_marca FOREIGN KEY (idmarca)
+      REFERENCES general.marca (idmarca) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT fk_producto_unidad FOREIGN KEY (idunidad)
+      REFERENCES compra.unidad (idunidad) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION
+)
+
+04/01/2016 - gabo
+-------------------------------------------------------------------
+* creacion de la vista seguridad.view_perfil
+-- View: seguridad.view_perfil
+-- DROP VIEW seguridad.view_perfil;
+CREATE OR REPLACE VIEW seguridad.view_perfil AS
+ SELECT perfil.idperfil,
+    perfil.descripcion,
+        CASE
+            WHEN perfil.estado = '1'::bpchar THEN 'ACTIVO'::text
+            ELSE 'INACTIVO'::text
+        END AS estado,
+    perfil.estado AS idestado
+   FROM seguridad.perfil
+  ORDER BY perfil.idperfil;
+
+ALTER TABLE seguridad.view_perfil
+  OWNER TO postgres;
+
+13/01/2016 - Winser
+------------------------------
+/*agregar el campo representante, telefono2, a la tabla venta.cliente ejecutar el siguiente codigo*/
+
+alter table venta.cliente
+add column represnombre varchar(250),
+add column represapellido varchar(300),
+add column represdni integer,
+add column telefono2 varchar(15),
+add column telefono3 varchar(15),
+add column represemail varchar(250)
+ 
+/*cambiar nombre de la tabla categoria.producto a categoria
+agregar la columna estado */
+alter table compra.categoria 
+add column estado char(1)
+
+22/01/2016 - jhon
+-----------------------------------
+* crear tabla [param], para los parametros del sistema
+CREATE TABLE seguridad.param
+(
+  idparam character varying(30) NOT NULL,
+  valor character varying(30),
+  descripcion text,
+  tipo character(1), -- Tipo valor, para armar el formulario. B: boolean, N: normal
+  CONSTRAINT pkparam PRIMARY KEY (idparam)
+)
+
+* agregar campo en tabla compra.compra
+valor_igv double precision,
+
+* crear esquema "almacen"
+* borrar tabla [almacen] del esquema compra
+* crear tabla [almacen] en el esquema almacen:
+CREATE TABLE almacen.almacen
+(
+  idalmacen serial NOT NULL,
+  idsucursal integer,
+  descripcion character varying(250),
+  direccion character varying(250),
+  telefono character varying(15),
+  estado character(1),
+  CONSTRAINT pk_almacen PRIMARY KEY (idalmacen),
+  CONSTRAINT fk_almacen_sucursal FOREIGN KEY (idsucursal)
+      REFERENCES seguridad.sucursal (idsucursal) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION
+)
+
+* crear tabla [moneda]:
+CREATE TABLE general.moneda
+(
+  idmoneda serial NOT NULL,
+  descripcion character varying(30),
+  simbolo character varying(5),
+  valor_cambio double precision,
+  estado character(1),
+  CONSTRAINT pk_moneda PRIMARY KEY (idmoneda)
+)
+
+* agregar campos en tabla [compra]:
+  idalmacen integer,
+  idmoneda integer,
+  cambio_moneda double precision,
+  
+29/01/2016 - jhon
+----------------------------------------------
+* para los estados de la tabla, considerar A (Activo) e I (Inactivo)
+* agregar campo: aplica_igv character(1), en producto
+
+02/02/2016 - Llaker
+-----------------------------------
+-- VISTA MODIFICADA 27/01/2016
+CREATE OR REPLACE VIEW seguridad.view_perfil AS
+ SELECT perfil.idperfil,
+    perfil.descripcion,
+        CASE
+            WHEN perfil.estado = 'A'::bpchar THEN 'ACTIVO'::text
+            ELSE 'INACTIVO'::text
+        END AS estado,
+    perfil.estado AS idestado
+   FROM seguridad.perfil
+  ORDER BY perfil.idperfil;
+
+ALTER TABLE seguridad.view_perfil
+  OWNER TO postgres;
+  
+  
+  
+-- TABLA MODIFICADA (Seguridad.empresa) -> Atributo añadido
+   ruc character varying(11)
+   
+   
+   
+-- CREADO LA CARPETA 
+  sistema/app/img/logo_empresa
+  
+-- VISTA CREADA 29/01/2016
+  CREATE OR REPLACE VIEW seguridad.view_sucursal AS 
+   SELECT 
+   s.idsucursal
+   ,e.descripcion empresa
+   ,s.descripcion
+   ,s.direccion
+   ,s.telefono
+   ,s.logo
+   ,s.idempresa
+   FROM seguridad.sucursal s
+   JOIN seguridad.empresa e ON e.idempresa=s.idempresa;
+
+  ALTER TABLE seguridad.view_sucursal
+    OWNER TO postgres;
+
+02/02/2016 - Llaker
+-----------------------------------
+
+06/02/2016
+----------------------------------------
+* eliminar campo descripcion de venta
+* agregar campos tabla [venta]:
+  serie integer,
+  correlativo integer,
+  idtipodocumento integer,
+  idalmacen integer,
+  despachado character varying(1), -- S|N
+  subtotal double precision,
+  valor_igv double precision,
+  igv double precision,
+  descuento double precision,
+  idvendedor integer,
+  cancelado character varying(1), -- S|N
+  pasa_despacho character varying(1),
+
+  
+07/02/2016
+------------------------------------------
+* renombrar carpeta: sistema/app/img/logo_empresa, por sistema/app/img/empresa
+* cambiar campo [idtipocompra], por [idtipoventa] de la tabla [compra]
+* agregar campo [idmoneda] en [venta]
+* crear tabla [serie_documento]
+CREATE TABLE venta.serie_documento
+(
+  idsucursal integer NOT NULL,
+  idtipodocumento integer NOT NULL,
+  serie integer NOT NULL,
+  correlativo integer,
+  CONSTRAINT pk_serie_documento PRIMARY KEY (idsucursal, idtipodocumento, serie)
+)
+
+
+-------- LLAKER 08/02/2016------------
+  -- Crear vista
+        CREATE OR REPLACE VIEW seguridad.view_usuario AS 
+         SELECT u.*,
+           (u.appat||' '||u.apmat) apellidos
+           FROM seguridad.usuario u
+          ORDER BY u.usuario;
+
+        ALTER TABLE seguridad.view_usuario
+          OWNER TO postgres;
+
+
+    
+-------- LLAKER 08/02/2016------------
+
+
+-------- *****************************LLAKER 10/02/2016**************************------------
+  ---- Crear esquema
+    CREATE SCHEMA caja
+      AUTHORIZATION postgres;
+
+
+  -- Crear conceptomovimiento
+      CREATE TABLE caja.conceptomovimiento
+      (
+        idconceptomovimiento serial NOT NULL,
+        descripcion character varying(120),
+        idtipomovimiento integer,
+        estado character(1),
+        CONSTRAINT pkconceptomovimiento PRIMARY KEY (idconceptomovimiento )
+      )
+      WITH (
+        OIDS=FALSE
+      );
+      ALTER TABLE caja.conceptomovimiento
+        OWNER TO postgres;
+
+
+  -- Crear Tipo_movimiento
+      CREATE TABLE caja.tipomovimiento
+      (
+        idtipomovimiento serial NOT NULL,
+        descripcion character varying(120),
+        estado character(1),
+        CONSTRAINT pktipomovimiento PRIMARY KEY (idtipomovimiento )
+      )
+      WITH (
+        OIDS=FALSE
+      );
+      ALTER TABLE caja.tipomovimiento
+        OWNER TO postgres;
+
+
+  ---- Crear tabla caja
+    CREATE TABLE caja.caja
+    (
+      idcaja serial NOT NULL,
+      idusuario_apertura character varying(12),
+      idusuario_cierre character varying(12),
+      fecha_apertura timestamp without time zone,
+      fecha_cierre timestamp without time zone,
+      idsucursal integer,
+      abierto character(1), -- S: si, N: no
+      estado character(1),
+      tienearqueo character(1), -- S: si, N: no
+      monto_apertura numeric(18,2),
+      monto_cierre numeric(18,2),
+      monto_apertura_d numeric(18,2),
+      monto_cierre_d numeric(18,2),
+      CONSTRAINT pkcaja PRIMARY KEY (idcaja )
+    )
+    WITH (
+      OIDS=FALSE
+    );
+    ALTER TABLE caja.caja
+      OWNER TO postgres;
+    COMMENT ON COLUMN caja.caja.abierto IS 'S: si, N: no';
+    COMMENT ON COLUMN caja.caja.tienearqueo IS 'S: si, N: no';
+
+
+
+
+  ---- caja.fn_tg_actualiza_saldocaja();
+    CREATE OR REPLACE FUNCTION caja.fn_tg_actualiza_saldocaja()
+      RETURNS trigger AS
+    $BODY$
+
+    DECLARE saldo_caja double precision;
+
+    BEGIN
+      IF NEW.codmoneda = '001' THEN
+        SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = NEW.idcaja AND idmoneda='1';
+        UPDATE caja.caja SET monto_cierre = saldo_caja WHERE idcaja = NEW.idcaja;
+
+        IF (TG_OP = 'UPDATE') THEN
+          IF (OLD.idcaja <> NEW.idcaja) THEN
+            SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = OLD.idcaja AND idmoneda='1';
+            UPDATE caja.caja SET monto_cierre = saldo_caja WHERE idcaja = OLD.idcaja ;
+          END IF;
+        END IF;
+      END IF; 
+
+
+      IF NEW.codmoneda = '002' THEN
+        SELECT coalesce(SUM(monto/tipocambio),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = NEW.idcaja AND idmoneda='2';
+        UPDATE caja.caja SET monto_cierre_d = saldo_caja WHERE idcaja = NEW.idcaja;
+
+        IF (TG_OP = 'UPDATE') THEN
+          IF (OLD.codcaja <> NEW.codcaja) THEN
+            SELECT coalesce(SUM(monto/tipocambio),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = OLD.idcaja AND idmoneda='2';
+            UPDATE caja.caja SET monto_cierre_d= saldo_caja WHERE idcaja = OLD.idcaja ;
+          END IF;
+        END IF;
+      END IF; 
+
+      RETURN NULL;
+    END;
+
+    $BODY$
+      LANGUAGE plpgsql VOLATILE
+      COST 100;
+    ALTER FUNCTION caja.fn_tg_actualiza_saldocaja()
+      OWNER TO postgres;
+
+
+
+    -- Crear detalle_caja
+        CREATE TABLE caja.detalle_caja
+        (
+          iddetalle_caja serial NOT NULL,
+          idcaja integer,
+          fecha date,
+          hora time without time zone,
+           idtipomovimiento integer,
+          monto double precision,
+          referencia text,
+          tabla character(1), -- C: compra, V: venta, E:Recibo Egreso
+          idtabla integer,
+          descripcion text,
+          idusuario integer,
+          idmoneda integer,
+          idtipodocumento integer,
+          serie character varying(4),
+          numero character varying(8),
+          tipocambio numeric(10,2),
+          estado character(1),
+          CONSTRAINT pkdetalle_caja PRIMARY KEY (iddetalle_caja )
+        )
+        WITH (
+          OIDS=FALSE
+        );
+        ALTER TABLE caja.detalle_caja
+          OWNER TO postgres;
+        COMMENT ON COLUMN caja.detalle_caja.tabla IS 'C: compra, V: venta, E:Recibo Egreso';
+
+        CREATE TRIGGER tg_actualiza_saldocaja
+          AFTER INSERT OR UPDATE
+          ON caja.detalle_caja
+          FOR EACH ROW
+          EXECUTE PROCEDURE caja.fn_tg_actualiza_saldocaja();
+
+
+
+
+    --  Crear tabla  arqueo
+      CREATE TABLE caja.arqueo_caja
+      (
+        idarqueo_caja serial NOT NULL,
+        idcaja integer,
+        b200 numeric(10,2),
+        b100 numeric(10,2),
+        b50 numeric(10,2),
+        b20 numeric(10,2),
+        b10 numeric(10,2),
+        b5 numeric(10,2),
+        b2 numeric(10,2),
+        b1 numeric(10,2),
+        b05 numeric(10,2),
+        b02 numeric(10,2),
+        b01 numeric(10,2),
+        total numeric(10,2),
+        saldo numeric(10,2),
+        resto numeric(10,2),
+        tiporesto character(1), -- F: falta, S: sobra
+        observaciones text,
+        estado character(1),
+        fecha timestamp without time zone,
+        codusuario character varying(12),
+        bd100 numeric(10,3),
+        bd50 numeric(10,2),
+        bd20 numeric(10,2),
+        bd10 numeric(10,2),
+        bd5 numeric(10,2),
+        bd2 numeric(10,2),
+        bd1 numeric(10,2),
+        totald numeric(10,2),
+        saldod numeric(10,2),
+        CONSTRAINT pkarqueo_caja PRIMARY KEY (idarqueo_caja )
+      )
+      WITH (
+        OIDS=FALSE
+      );
+      ALTER TABLE caja.arqueo_caja
+        OWNER TO postgres;
+      COMMENT ON COLUMN caja.arqueo_caja.tiporesto IS 'F: falta, S: sobra';
+
+
+
+      -- Crear vista Movimientos
+      CREATE OR REPLACE VIEW caja.view_movimiento AS 
+       SELECT m.*
+      ,t.descripcion tipomovimiento
+      FROM caja.conceptomovimiento m
+      JOIN caja.tipomovimiento t ON t.idtipomovimiento=m.idtipomovimiento;
+
+      ALTER TABLE caja.view_movimiento
+        OWNER TO postgres;
+
+
+
+    ----- Crear recibo ingresos
+          CREATE TABLE venta.recibo_ingreso
+          (
+            idrecibo_ingreso serial NOT NULL,
+            serie character varying(10),
+            numero character varying(10),
+            idcliente integer,
+            monto numeric(10,2),
+            idmoneda integer,
+            fecha date,
+            concepto text,
+            tipocambio numeric(10,2),
+            idtipopago_credito integer,
+            idamortizacion integer,
+            idusuario integer,
+            idsucursal integer,
+            estado character(1),
+            hora time without time zone,
+            idtipo_ingreso integer,
+            CONSTRAINT pkrecibo_ingreso PRIMARY KEY (idrecibo_ingreso )
+          )
+          WITH (
+            OIDS=FALSE
+          );
+          ALTER TABLE venta.recibo_ingreso
+            OWNER TO postgres;
+
+
+    -- Crear vista detalle_caja
+          CREATE OR REPLACE VIEW caja.detallecaja_view AS 
+           SELECT dc1.iddetalle_caja, dc1.fecha, dc1.hora, 
+                  tm.descripcion tipo
+                  , dc1.descripcion, dc1.referencia, abs(dc1.monto) AS monto, 
+                  ( SELECT sum(dc2.monto) AS sum
+                     FROM caja.detalle_caja dc2
+                    WHERE dc1.iddetalle_caja >= dc2.iddetalle_caja AND dc2.estado = 'A'::bpchar AND dc2.idcaja = dc1.idcaja) AS saldo, dc1.idcaja
+             FROM caja.detalle_caja dc1
+             JOIN caja.tipomovimiento tm ON tm.idtipomovimiento=dc1.idtipomovimiento
+            WHERE dc1.estado = 'A'::bpchar;
+
+          ALTER TABLE caja.detallecaja_view
+            OWNER TO postgres;
+
+
+
+-------- *****************************LLAKER 10/02/2016**************************------------
+
+-------------- 12/02/2016
+--* agregar campo en tabla [venta]
+alter table venta.venta add column cambio_moneda double precision;
+
+--------------- 14/02/2016
+-- * crear tabla detalle_venta
+CREATE TABLE venta.detalle_venta
+(
+  iddetalle_venta serial NOT NULL,
+  idventa integer NOT NULL,
+  idproducto integer,
+  descripcion text,
+  idunidad integer,
+  cantidad integer,
+  precio double precision,
+  despachado character varying(1),
+  estado character varying(1),
+  CONSTRAINT pk_detalle_venta PRIMARY KEY (iddetalle_venta)
+)
+
+-- * crear tabla detalle_venta_serie
+CREATE TABLE venta.detalle_venta_serie
+(
+  idventa integer NOT NULL,
+  idproducto integer NOT NULL,
+  serie character varying(45) NOT NULL,
+  estado character varying(1),
+  CONSTRAINT pk_detalle_venta_serie PRIMARY KEY (idventa, idproducto, serie)
+)
+
+-- * agregar campo en tipo_documento
+alter table venta.tipo_documento add column genera_correlativo character(1);
+
+
+-- * crear campos en la tabla cliente
+alter table venta.cliente add column nombres character varying(45);
+alter table venta.cliente add column apellidos character varying(45);
+alter table venta.cliente add column dni character varying(8);
+alter table venta.cliente add column ruc character varying(11);
+
+
+
+------------/////////////////LLAKER 14/02/2016/////////////////////--------------------
+ALTER TABLE caja.tipomovimiento ADD COLUMN orden integer;
+
+ALTER TABLE caja.tipomovimiento ADD COLUMN alias character varying(120);
+
+ALTER TABLE general.moneda ADD COLUMN abreviatura character varying(120);
+<<<<<<< HEAD
+------------/////////////////LLAKER 14/02/2016/////////////////////--------------------
+
+
+
+------------/////////////////LLAKER 15/02/2016/////////////////////--------------------
+DROP TRIGGER tg_actualiza_saldocaja ON caja.detalle_caja;
+
+DROP FUNCTION caja.fn_tg_actualiza_saldocaja();
+
+DROP TABLE caja.caja;
+
+DROP TABLE caja.detalle_caja;
+
+DROP VIEW caja.detallecaja_view;
+
+--
+CREATE TABLE caja.caja
+(
+  idcaja serial NOT NULL,
+  idusuario_apertura character varying(12),
+  idusuario_cierre character varying(12),
+  fecha_apertura timestamp without time zone,
+  fecha_cierre timestamp without time zone,
+  idsucursal integer,
+  abierto character(1), -- S: si, N: no
+  tienearqueo character(1), -- S: si, N: no
+  estado character(1),
+  CONSTRAINT pkcaja PRIMARY KEY (idcaja )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE caja.caja
+  OWNER TO postgres;
+COMMENT ON COLUMN caja.caja.abierto IS 'S: si, N: no';
+COMMENT ON COLUMN caja.caja.tienearqueo IS 'S: si, N: no';
+--
+
+--
+CREATE TABLE caja.detalle_caja
+(
+  iddetalle_caja serial NOT NULL,
+  idcaja integer,
+  fecha date,
+  hora time without time zone,
+  idconceptomovimiento integer,
+  monto double precision,
+  tabla character(1), -- C: compra, V: venta, E:Recibo Egreso
+  idtabla integer,
+  descripcion text,
+  idusuario integer,
+  idmoneda integer,
+  idtipodocumento integer,
+  idcliente integer,
+  serie character varying(4),
+  numero character varying(8),
+  tipocambio numeric(10,2),
+  montoconvertido numeric(10,2),
+  referencia character varying(200),
+  estado character(1),
+  CONSTRAINT pkdetalle_caja PRIMARY KEY (iddetalle_caja )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE caja.detalle_caja
+  OWNER TO postgres;
+COMMENT ON COLUMN caja.detalle_caja.tabla IS 'C: compra, V: venta, E:Recibo Egreso';
+--
+
+--
+CREATE OR REPLACE FUNCTION caja.fn_tg_actualiza_saldocaja()
+  RETURNS trigger AS
+$BODY$
+
+DECLARE saldo_caja double precision;
+
+BEGIN
+
+    SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda;
+    UPDATE caja.cierrecaja SET monto=saldo_caja WHERE idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda;
+
+    IF (TG_OP = 'UPDATE') THEN
+      IF (OLD.idcaja <> NEW.idcaja) THEN
+        SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = OLD.idcaja AND idmoneda=NEW.idmoneda;
+        UPDATE caja.cierrecaja SET monto=saldo_caja WHERE idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda;
+      END IF;
+    END IF;
+
+    RETURN NULL;
+END;
+
+$BODY$
+  LANGUAGE plpgsql VOLATILE
+  COST 100;
+ALTER FUNCTION caja.fn_tg_actualiza_saldocaja()
+  OWNER TO postgres;
+--
+
+--
+CREATE TABLE caja.cierrecaja
+(
+  idcierrecaja serial,
+  idcaja integer,
+  idmoneda integer,
+  monto numeric(18,2),
+  tipocambio numeric(18,2),
+  montoconvertido numeric(18,2),
+  estado character(1),
+  CONSTRAINT cierrecaja_pkey PRIMARY KEY (idcierrecaja )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE caja.cierrecaja
+  OWNER TO postgres;
+--  
+
+--  
+CREATE OR REPLACE VIEW caja.detallecaja_view AS 
+ SELECT dc1.iddetalle_caja, dc1.fecha, dc1.hora, tm.descripcion AS tipo, dc1.descripcion, dc1.referencia, abs(dc1.monto) AS monto, ( SELECT sum(dc2.monto) AS sum
+           FROM caja.detalle_caja dc2
+          WHERE dc1.iddetalle_caja >= dc2.iddetalle_caja AND dc2.estado = 'A'::bpchar AND dc2.idcaja = dc1.idcaja) AS saldo, dc1.idcaja
+   FROM caja.detalle_caja dc1
+   JOIN caja.tipomovimiento tm ON tm.idtipomovimiento = dc1.idconceptomovimiento
+  WHERE dc1.estado = 'A'::bpchar;
+
+ALTER TABLE caja.detallecaja_view
+  OWNER TO postgres;
+--
+------------/////////////////LLAKER 15/02/2016/////////////////////--------------------
+
+
+
+
+
+
+ -----------------------------------
+  20/02/2016	--> Llaker
+  -----------------------------------
+  
+	ALTER TABLE seguridad.modulo DROP COLUMN image;
+  
+  
+	CREATE TABLE caja.denominacion
+	(
+	  iddenominacion serial NOT NULL,
+	  idmoneda integer,
+	  billete numeric(10,2),
+	  estado character(1),
+	  CONSTRAINT pkiddenominacion PRIMARY KEY (iddenominacion )
+	)
+	WITH (
+	  OIDS=FALSE
+	);
+	ALTER TABLE caja.denominacion
+	  OWNER TO postgres;
+	  
+	 
+	CREATE TABLE caja.detalle_arqueo
+	(
+	  iddetalle_arqueo serial NOT NULL,
+	  iddenominacion integer,
+	  idarqueo_caja integer,
+	  valor_billete numeric(10,2),
+	  estado character(1),
+	  CONSTRAINT pkdetalle_arqueo PRIMARY KEY (iddetalle_arqueo )
+	)
+	WITH (
+	  OIDS=FALSE
+	);
+	ALTER TABLE caja.detalle_arqueo
+	  OWNER TO postgres;
+	
+	DROP TABLE caja.arqueo_caja;
+	
+
+	CREATE TABLE caja.arqueo_caja
+	(
+	  idarqueo_caja serial NOT NULL,
+	  idcaja integer,
+	  observaciones text,
+	  fecha timestamp without time zone,
+	  idusuario integer,
+	  estado character(1),
+	  idcierrecaja integer,
+	  CONSTRAINT pkarqueo_caja PRIMARY KEY (idarqueo_caja )
+	)
+	WITH (
+	  OIDS=FALSE
+	);
+	ALTER TABLE caja.arqueo_caja
+	  OWNER TO postgres;
+	  
+ -----------------------------------
+  20/02/2016	--> Llaker
+  -----------------------------------
+  
+  -----------------------------------
+  23/02/2016	--> Llaker
+  
+	CREATE TABLE seguridad.tipoempleado
+	(
+	  idtipoempleado serial NOT NULL,
+	  idsucursal integer,
+	  descripcion character varying(120),
+	  estado character(1),
+	  CONSTRAINT pktipoempleado PRIMARY KEY (idtipoempleado )
+	)
+	WITH (
+	  OIDS=FALSE
+	);
+	ALTER TABLE seguridad.tipoempleado
+	  OWNER TO postgres;
+	  
+	--
+	
+	alter table seguridad.acceso_empresa add column estado character(1);
+	 
+	--
+	CREATE TABLE general.tasacredito
+	(
+	  idtasacredito serial NOT NULL,
+	  mes integer,
+	  porcentaje numeric(10,2),
+	  estado character(1),
+	  CONSTRAINT pktasacredito PRIMARY KEY (idtasacredito )
+	)
+	WITH (
+	  OIDS=FALSE
+	);
+	ALTER TABLE general.tasacredito
+	  OWNER TO postgres;
+	
+	--
+	
+	CREATE OR REPLACE VIEW general.view_tasacredito AS 
+	 SELECT tasacredito.idtasacredito, tasacredito.mes, tasacredito.porcentaje, tasacredito.estado, to_char(((('2016-'::text || tasacredito.mes) || '-23'::text)::date)::timestamp with time zone, 'TMMonth'::text) AS to_char
+	   FROM general.tasacredito
+	  WHERE tasacredito.estado = 'A'::bpchar;
+
+	ALTER TABLE general.view_tasacredito
+	  OWNER TO postgres;
+
+	--
+	
+	CREATE TABLE general.tipoempleado
+	(
+	  idtipoempleado serial NOT NULL,
+	  descripcion character varying(100),
+	  estado character(1),
+	  idsucursal integer,
+	  CONSTRAINT pktipoempleado PRIMARY KEY (idtipoempleado )
+	)
+	WITH (
+	  OIDS=FALSE
+	);
+	ALTER TABLE general.tipoempleado
+	  OWNER TO postgres;
+
+	--
+	
+	DROP TABLE seguridad.acceso_empresa;
+	
+	--
+	
+	CREATE TABLE seguridad.acceso_empresa
+	(
+	  idperfil integer,
+	  idusuario integer NOT NULL,
+	  idsucursal integer NOT NULL,
+	  idtipoempleado integer,
+	  estado character(1),
+	  CONSTRAINT pk_acceso_empresa PRIMARY KEY (idusuario , idsucursal )
+	)
+	WITH (
+	  OIDS=FALSE
+	);
+	ALTER TABLE seguridad.acceso_empresa
+	  OWNER TO postgres;
+	  
+	
+  23/02/2016	--> Llaker
+  -----------------------------------
+  
+  -----------------------------------
+  25/05/2016	--> Llaker
+	--
+	alter table seguridad.acceso_sistema add column estado character(1);
+	--
+	CREATE OR REPLACE FUNCTION caja.fn_tg_actualiza_saldocaja()
+		  RETURNS trigger AS
+		$BODY$
+
+		DECLARE saldo_caja double precision;
+
+		BEGIN
+
+				SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal;
+				UPDATE caja.cierrecaja SET monto=saldo_caja WHERE idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal;
+
+				IF (TG_OP = 'UPDATE') THEN
+					IF (OLD.idcaja <> NEW.idcaja) THEN
+						SELECT coalesce(SUM(monto),0) INTO saldo_caja FROM caja.detalle_caja WHERE estado = 'A' AND idcaja = OLD.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal;
+						UPDATE caja.cierrecaja SET monto=saldo_caja WHERE idcaja = NEW.idcaja AND idmoneda=NEW.idmoneda AND idsucursal=NEW.idsucursal;
+					END IF;
+				END IF;
+
+				RETURN NULL;
+		END;
+
+		$BODY$
+		  LANGUAGE plpgsql VOLATILE
+		  COST 100;
+		ALTER FUNCTION caja.fn_tg_actualiza_saldocaja()
+		  OWNER TO postgres;
+  25/05/2016	--> Llaker
+  -----------------------------------
+  
+------------------------------------------------ 25/02/2016 --------------------------------------------------
+* modificar campo [idunidad] de tabla [compra.detalle_pedido]
+ALTER TABLE compra.detalle_pedido
+   ALTER COLUMN idunidad DROP DEFAULT;
+ALTER TABLE compra.detalle_pedido
+  DROP CONSTRAINT fk_detallepedido_unidad;
+ALTER TABLE compra.detalle_pedido
+  ADD CONSTRAINT fk_detallepedido_unidad FOREIGN KEY (idunidad)
+      REFERENCES compra.unidad (idunidad) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION;
+
+------------------------------------------------ 29/02/2016 ---------------------------------------------
+* agregar campo en tabla [compra.pedido]:
+ALTER TABLE compra.pedido
+  ADD COLUMN atendido character varying(1);
+  
+* agregar campo en tabla [compra.detalle_pedido]:
+ALTER TABLE compra.detalle_pedido
+  ADD COLUMN atendido character varying(1);
+  
+------------------------------------------------ 04/03/2016 ----------------------------------------------
+* estructura de la tabla compra
+CREATE TABLE compra.compra
+(
+  idcompra serial NOT NULL,
+  idproveedor integer,
+  idsucursal integer,
+  idtipoventa integer,
+  idusuario integer,
+  fecha_compra timestamp without time zone,
+  fecha_registro timestamp without time zone,
+  estado character(1) DEFAULT 1, -- 1 = activo...
+  idtipodocumento integer,
+  nrodocumento character varying(20),
+  nroguias character varying(100),
+  subtotal numeric(10,2),
+  igv numeric(10,2),
+  descuento numeric(10,2),
+  gastos numeric(10,2),
+  recepcionado character varying(1), -- Para compras anticipadas (S|N)
+  valor_igv double precision,
+  idalmacen integer,
+  idmoneda integer,
+  cambio_moneda double precision,
+  CONSTRAINT pk_compra PRIMARY KEY (idcompra),
+  CONSTRAINT fk_compra_proveedor FOREIGN KEY (idproveedor)
+      REFERENCES compra.proveedor (idproveedor) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT fk_compra_sucursal FOREIGN KEY (idsucursal)
+      REFERENCES seguridad.sucursal (idsucursal) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT fk_compra_tipo_documento FOREIGN KEY (idtipodocumento)
+      REFERENCES venta.tipo_documento (idtipodocumento) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT fk_compra_usuario FOREIGN KEY (idusuario)
+      REFERENCES seguridad.usuario (idusuario) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION
+)
+
+
+* crear vista 
+CREATE OR REPLACE VIEW compra.compra_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, t.descripcion AS tipo_documento, c.nrodocumento, c.subtotal, c.igv, c.subtotal + c.igv AS total, c.estado, c.recepcionado, c.fecha_compra, to_char(c.fecha_compra, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idsucursal
+   FROM compra.compra c
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+   
+
+------------------------------------------------------ 21/03/2016 -----------------------------------------
+-- * crear las tablas
+
+CREATE TABLE general.categoria
+(
+  idcategoria serial NOT NULL,
+  descripcion character varying(45),
+  prefijo character varying(10),
+  estado character varying(1),
+  CONSTRAINT pk_categoria PRIMARY KEY (idcategoria)
+)
+
+CREATE TABLE general.color
+(
+  idcolor serial NOT NULL,
+  descripcion character varying(45),
+  estado character(1),
+  CONSTRAINT pk_color PRIMARY KEY (idcolor)
+)
+
+CREATE TABLE general.linea
+(
+  idlinea serial NOT NULL,
+  descripcion character varying(45),
+  prefijo character varying(10),
+  estado character varying(1),
+  CONSTRAINT pk_linea PRIMARY KEY (idlinea)
+)
+
+CREATE TABLE general.material
+(
+  idmaterial serial NOT NULL,
+  descripcion character varying(45),
+  estado character(1),
+  CONSTRAINT pk_material PRIMARY KEY (idmaterial)
+)
+
+CREATE TABLE general.tamanio
+(
+  idtamanio serial NOT NULL,
+  descripcion character varying(45),
+  estado character(1),
+  CONSTRAINT pk_tamanio PRIMARY KEY (idtamanio)
+)
+
+
+-- * modificar vista
+CREATE OR REPLACE VIEW compra.compra_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, t.descripcion AS tipo_documento, c.nrodocumento, c.subtotal, c.igv, c.subtotal + c.igv AS total, c.estado, c.recepcionado, c.fecha_compra, to_char(c.fecha_compra, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idsucursal
+   FROM compra.compra c
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+   
+-- * agregar campo en marca y modelo
+alter table general.marca add column prefijo character varying(10);
+alter table general.modelo add column prefijo character varying(10);
+
+-- * eliminar campo en modelo
+alter table general.modelo drop column idmarca;
+
+
+--- * estructura de la tabla producto
+CREATE TABLE compra.producto
+(
+  idproducto serial NOT NULL,
+  idunidad integer,
+  descripcion character varying(250),
+  stock_minimo integer,
+  precio_compra numeric(18,2),
+  estado character(1), -- 1 = activo...
+  idmarca integer,
+  idmodelo integer,
+  tipo character(1), -- P: producto | S: servicio
+  controla_serie character(1),
+  controla_stock character(1),
+  precio_mercado numeric(18,2),
+  stock_maximo integer,
+  idlinea integer,
+  idcategoria integer,
+  codigo_barras character varying(30),
+  codigo_producto character varying(30),
+  codigo_alterno character varying(30),
+  aplica_igv character(1),
+  idcolor integer,
+  idmaterial integer,
+  idtamanio integer,
+  peso character varying(30),
+  genera_alerta_stock character(1),
+  CONSTRAINT pk_producto PRIMARY KEY (idproducto),
+  CONSTRAINT fk_producto_marca FOREIGN KEY (idmarca)
+      REFERENCES general.marca (idmarca) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT fk_producto_unidad FOREIGN KEY (idunidad)
+      REFERENCES compra.unidad (idunidad) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION
+)
+
+
+<<<<<<< HEAD
+
+/******************** 09/04/2016*************************************************/
+CREATE SCHEMA credito
+  AUTHORIZATION postgres;
+
+
+create table credito.ciclo
+(id_ciclo serial primary key,
+descripcion varchar(100),
+estado char(1));
+
+create table credito.tipo_credito(
+id_tipo_credito serial primary key,
+descripcion varchar(100),
+estado char(1));
+
+create table credito.tipo_tasa(
+id_tipo_tasa serial primary key,
+descripcion varchar(100),
+estado char(1));
+
+create table credito.estado_credito(
+id_estado_credito serial primary key,
+descripcion varchar(100),
+estado char(1));
+
+create table credito.tipo_recibo(
+id_tipo_recibo serial primary key,
+tipo char(1),
+canjeado char(1),
+descripcion varchar(100),
+estado char(1));
+
+INSERT INTO credito.tipo_recibo (descripcion, estado) 
+VALUES('INICIAL','A');
+INSERT INTO credito.tipo_tasa (descripcion, estado) 
+VALUES('TASA FIJA','A');
+INSERT INTO credito.tipo_tasa (descripcion, estado) 
+VALUES('TASA MENSUAL','A');
+INSERT INTO credito.tipo_credito (descripcion, estado) 
+VALUES('SIN INTERES','A');
+INSERT INTO credito.tipo_credito (descripcion, estado) 
+VALUES('CON INTERES','A');
+INSERT INTO credito.ciclo (descripcion, estado) 
+VALUES('MENSUAL','A');
+
+ALTER TABLE venta.reciboingreso
+add column canjeado char(1) ;
+
+
+
+create table credito.credito(
+idcredito serial primary key,
+idsucursal integer,
+idventa integer,
+idcliente integer,
+id_estado_credito integer,
+id_ciclo integer,
+id_tipo_tasa integer,
+id_tipo_credito integer,
+nro_credito varchar(10),
+fecha_credito  timestamp without time zone,
+nro_letras integer,
+dias_gracia integer,
+mora_valor numeric(10,2),
+monto_facturado numeric(10,2),
+interes numeric (10,2),
+monto_credito numeric (10,2),
+pagado char(1),
+central_riesgo char(1),
+estado char(1));
+ALTER TABLE credito.credito
+  OWNER TO postgres;
+COMMENT ON COLUMN credito.credito.pagado IS 'S/N';
+
+create table credito.letra
+(idletra serial primary key,
+ idcredito integer,
+ idusuario integer,
+ idtipo_pago integer,
+ fecha_vencimiento  timestamp without time zone,
+ fecha_cancelado  timestamp without time zone,
+ nro_letra integer,
+ tipo_letra char(1),
+ descripcion varchar(100),
+ monto_capital numeric(10,2),
+ monto_letra numeric(10,2),
+ gastos numeric(10,2),
+ descuento numeric(10,2),
+ mora numeric(10,2),
+ estado char(1)
+ );
+
+
+create table 
+credito.requisito_credito (
+idrequisito_credito serial primary key,
+descripcion varchar(100),
+solicita_fichero char(1),
+reiterativo char(1),
+estado char(1)
+);
+
+
+create table 
+credito.requerimiento_cliente (
+idrequisito_credito integer,
+idcliente integer,
+descripcion varchar(100),
+confirmado char(1),
+estado char(1),
+constraint pk_requirimiento_cliente primary key (idrequisito_credito ,idcliente)
+);
+ALTER TABLE credito.requerimiento_cliente
+  OWNER TO postgres;
+COMMENT ON COLUMN credito.requerimiento_cliente.confirmado IS 'S/N';
+
+
+
+create table 
+credito.requerimiento_credito (
+idrequisito_credito integer,
+idcredito integer,
+descripcion varchar(100),
+confirmado char(1),
+estado char(1),
+constraint pk_requirimiento_credito primary key (idrequisito_credito,idcredito)
+);
+ALTER TABLE credito.requerimiento_cliente
+  OWNER TO postgres;
+COMMENT ON COLUMN credito.requerimiento_cliente.confirmado IS 'S/N';
+
+
+
+create table credito.amortizacion
+(idamortizacion serial primary key,
+ idsucursal integer,
+ idtipo_pago integer,
+ idrecibo_ingreso integer,
+ idletra integer,
+ idusuario integer,
+ idcredito integer,
+ serie integer,
+ numero integer,
+ descripcion varchar(250),
+ estado char(1));
+=======
+---------------------------------------- 27/03/2016 -----------------------------------------
+-- * crear tabla tipo_producto
+CREATE TABLE general.tipo_producto
+(
+  idtipo_producto serial NOT NULL,
+  descripcion character varying(150),
+  estado character varying(1),
+  CONSTRAINT pk_tipo_producto PRIMARY KEY (idtipo_producto)
+)
+
+
+-- * agregar columna en compra
+ALTER TABLE compra.producto ADD COLUMN idtipo_producto integer;
+ALTER TABLE compra.producto ADD COLUMN descripcion_detallada character varying(200);
+ALTER TABLE compra.producto ADD COLUMN pref_codigo_producto character varying(30);
+ALTER TABLE compra.producto ADD COLUMN nro_codigo_producto character varying(10);
+
+---------------------------------------- 31/03/2016 -------------------------------------------
+-- * agregar columna en compra
+ALTER TABLE compra.compra ADD COLUMN tipo_cambio double precision;
+
+---------------------------------------- 05/04/2016 -------------------------------------------
+-- * crear las tablas
+CREATE TABLE compra.producto_precio_compra
+(
+  idproducto integer NOT NULL,
+  idsucursal integer NOT NULL,
+  idunidad integer NOT NULL,
+  idmoneda integer NOT NULL,
+  precio double precision,
+  CONSTRAINT pk_producto_precio_compra PRIMARY KEY (idproducto, idsucursal, idunidad, idmoneda)
+);
+
+CREATE TABLE compra.producto_precio_venta
+(
+  idproducto integer NOT NULL,
+  idsucursal integer NOT NULL,
+  idunidad integer,
+  idmoneda integer,
+  idprecio integer NOT NULL,
+  idtipo_precio integer,
+  cantidad double precision,
+  precio double precision,
+  porcentaje double precision,
+  CONSTRAINT fk_producto_precio_venta PRIMARY KEY (idproducto, idsucursal, idprecio)
+);
+
+CREATE TABLE compra.tipo_precio
+(
+  idtipo_precio integer NOT NULL,
+  descripcion character varying(45),
+  abreviatura character varying(10),
+  estado character varying(1),
+  CONSTRAINT pk_tipo_precio PRIMARY KEY (idtipo_precio)
+);
+
+-- * insercion de registros
+INSERT INTO compra.tipo_precio VALUES (1, 'PRECIO MERCADO / BASE', 'PM', 'A');
+INSERT INTO compra.tipo_precio VALUES (2, 'PRECIO FIJO / ESTANDAR', 'PF', 'A');
+INSERT INTO compra.tipo_precio VALUES (3, 'PRECIO PORCENTUAL CALCULABLE', 'PP', 'A');
+
+---* agregar campos a la tabla concepto movimiento.
+
+ALTER TABLE caja.conceptomovimiento ADD COLUMN ver_compra char(1);
+ALTER TABLE caja.conceptomovimiento ADD COLUMN ver_venta char(1);
+ALTER TABLE caja.conceptomovimiento ADD COLUMN ver_reciboingreso char(1);
+ALTER TABLE caja.conceptomovimiento ADD COLUMN ver_reciboegreso char(1);
+
+CREATE TABLE general.tarjeta
+(idtarjeta serial primary key,
+ descripcion varchar (200),
+ estado char(1)
+ )
+ ;
+ CREATE TABLE venta.movimiento_tarjeta
+ (
+  idsucursal integer,
+  idusuario integer,  
+  idoperacion integer,
+  tabla varchar(100),
+  idtarjeta integer,
+  nro_operacion varchar(50),
+  nro_tarjeta varchar(50),
+  importe numeric (10,2),
+  hora time without time zone,
+  fecha date,
+  estado char(1) 
+  );
+  CREATE TABLE venta.movimiento_deposito
+ (
+  idsucursal integer,
+  idusuario integer,  
+  idoperacion integer,
+  tabla varchar(100),
+  idcuentas_bancarias integer,
+  nro_operacion varchar(50),
+  importe numeric (10,2),
+  hora time without time zone,
+  fecha date,
+  fecha_deposito date,
+  estado char(1) 
+  );
+
+-- * aniadir campo en tipo pago
+alter table venta.tipopago alter column mostrar_en_venta character(1)
+
+-- * aniadir campo en venta
+alter table venta.venta alter column idtipopago character(1)
+
+<<<<<<< HEAD
+
+//------------------21/04/2016-------------------//
+
+ALTER TABLE general.banco
+ADD COLUMN abreviatura  character varying (10);
+ALTER TABLE venta.tipopago
+ADD COLUMN mostrar_en_compra character(1);
+ALTER TABLE venta.tipopago
+ADD COLUMN mostrar_en_reciboingreso character(1);
+ALTER TABLE venta.tipopago
+ADD COLUMN mostrar_en_reciboegreso character(1);
+
+=======
+---------------------------------------- 23/04/2016 -------------------------------------------
+--* agregar columna en [credito.credito]
+ALTER TABLE credito.credito ADD COLUMN idgarante integer;
+COMMENT ON COLUMN credito.credito.idgarante IS 'es el mismo idcliente';
+
+--* agregar campo [venta.detalle_venta_serie]
+ALTER TABLE venta.detalle_venta_serie ADD COLUMN iddetalle_venta integer;
+
+--* cambiar pk de la tabla venta.detalle_venta_serie
+CONSTRAINT pk_detalle_venta_serie PRIMARY KEY (iddetalle_venta, idventa, idproducto, serie)
+
+--* agregar campo en tabla [venta.tipo_documento] 
+  ALTER TABLE venta.tipo_documento ADD COLUMN abreviatura character varying(10);
+
+   
+-------------------------------------------- 24/04/2016 -------------------------------------------
+--* agregar campo en venta
+ALTER TABLE venta.venta ADD COLUMN con_credito character varying(1);
+COMMENT ON COLUMN venta.venta.con_credito IS 'tiene credito (S|N)';
+<<<<<<< HEAD
+>>>>>>> 91812d8eef6e31a6174a160265b387f6496c4c8d
+=======
+
+--* crear vista para la venta
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie) || '-'::text) || v.correlativo AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+------------------------------------------- 27/04/2016 ----------------------------------------------
+--* tabla requisito_credito
+CREATE TABLE credito.requisito_credito
+(
+  idrequisito_credito serial NOT NULL,
+  descripcion character varying(45),
+  obligatorio character(1),
+  solicita_ficheros character varying(1), -- S|N
+  reiterativo character varying(1),
+  cantidad integer,
+  CONSTRAINT pk_requisito_credito PRIMARY KEY (idrequisito_credito)
+);
+<<<<<<< HEAD
+>>>>>>> 148ed77e521666d497f6d8902df8f957804a9644
+=======
+
+
+------------------------------------------- 01/05/2016 -----------------------------------------------
+--* agregar campo en ciclo
+ALTER TABLE credito.ciclo ADD COLUMN dias double precision;
+COMMENT ON COLUMN credito.ciclo.dias IS 'Valor del ciclo en dias';
+
+--* considerar parametros [dias_gracia, dias_mes]
+INSERT INTO seguridad.param VALUES ('dias_gracia', '5', 'Numero de dias de atrazo de un credito para el calculo de mora', 'A');
+INSERT INTO seguridad.param VALUES ('dias_mes', '30', 'Numero  de dias a considerar en un mes', 'A');
+
+------------------------------------------ 02/05/2016---------------------------------------------
+--* modificar campo en tabla [venta.cliente]
+ALTER TABLE venta.cliente RENAME credito TO limite_credito;
+
+--* agregar campo monto en tabla [credito.amortizacion]
+ALTER TABLE credito.amortizacion ADD COLUMN monto numeric(10,2);
+
+--* agregar campo en tabla [credito.requisito_credito]
+ALTER TABLE credito.requisito_credito ADD COLUMN tipo character varying(1);
+COMMENT ON COLUMN credito.requisito_credito.tipo IS 'Tipo de requisito  (L: cliente, C: credito)';
+<<<<<<< HEAD
+>>>>>>> 6ebbfd1c54178c4b2474488620faa65edb9ec275
+=======
+
+
+--------------------------------------------- 04/05/2016 --------------------------------------------
+--* cambiar estructura tabla [credito.requerimiento_cliente]
+DROP TABLE credito.requerimiento_cliente;
+CREATE TABLE credito.requerimiento_cliente
+(
+  idrequerimiento_cliente serial NOT NULL,
+  idrequisito_credito integer,
+  idcliente integer,
+  confirmado character(1), -- S/N
+  estado character(1),
+  file_url character varying(45),
+  fecha date,
+  con_archivo character varying(1),
+  CONSTRAINT pk_requerimiento_cliente PRIMARY KEY (idrequerimiento_cliente)
+);
+
+----------------------------------------------- 05/05/2016 ------------------------------------------
+--* agregar campo en tabla [credito.credito]
+ALTER TABLE credito.credito ADD COLUMN genera_mora character varying(1);
+ALTER TABLE credito.credito ADD COLUMN tasa double precision;
+ALTER TABLE credito.credito ADD COLUMN inicial double precision;
+ALTER TABLE credito.credito ADD COLUMN gastos double precision;
+ALTER TABLE credito.credito ADD COLUMN capital numeric(10,2);
+
+--* crear tabla
+CREATE TABLE credito.nrocredito_empresa
+(
+  idempresa integer NOT NULL,
+  numero integer,
+  CONSTRAINT pk_nrocredito_empresa PRIMARY KEY (idempresa)
+);
+
+--* tabla letra
+ALTER TABLE credito.letra ALTER COLUMN idletra DROP DEFAULT;
+DROP SEQUENCE credito.letra_idletra_seq;
+ALTER TABLE credito.letra DROP CONSTRAINT letra_pkey;
+ALTER TABLE credito.letra ADD CONSTRAINT pk_letra PRIMARY KEY (idletra, idcredito);
+ALTER TABLE credito.letra ADD COLUMN interes numeric(10,2);
+>>>>>>> c54ce4e414bf0b322916aa665683712cb25fc3dd
+
+<<<<<<< HEAD
+------------------------------------------------ 10/05/2016 -------------------------------------------------
+--* agregar campo en credito.credito
+ALTER TABLE credito.credito ADD COLUMN descripcion text;
+=======
+
+<<<<<<< HEAD
+/*winser cambios mayo?*/
+update seguridad.modulo
+set url = 'tipo_documento'
+where idmodulo=32
+
+update seguridad.modulo
+set url = 'tipo_venta'
+where idmodulo=49
+
+=======
+
+
+ -------------------------------------------06/05/2016--------------------------------------------------
+CREATE OR REPLACE VIEW general.view_cuentas_bancarias AS 
+  SELECT cb.*,(b.abreviatura||' -'||m.abreviatura||'- '||cb.nro_cuenta) cuenta FROM general.cuentas_bancarias cb
+  JOIN general.banco b ON b.idbanco=cb.idbanco
+  JOIN general.moneda m ON m.idmoneda=cb.idmoneda;
+ALTER TABLE general.view_cuentas_bancarias
+  OWNER TO postgres;
+
+
+
+ALTER TABLE compra.compra ADD COLUMN serie character varying(6);
+
+
+DROP VIEW compra.compra_view;
+
+
+CREATE OR REPLACE VIEW compra.compra_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, t.descripcion AS tipo_documento, (c.serie||'-'||c.nrodocumento) nrodocumento, c.subtotal, c.igv, c.subtotal + c.igv AS total, c.estado, c.recepcionado, c.fecha_compra, to_char(c.fecha_compra, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idsucursal
+   FROM compra.compra c
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+   
+---------------------------------------------- 13/05/2016 ----------------------------------------------
+--* cambiar tipo campo en tabla credito.letra
+ALTER TABLE credito.letra ALTER COLUMN fecha_vencimiento TYPE date;
+
+<<<<<<< HEAD
+ALTER TABLE compra.compra_view
+  OWNER TO postgres;
+>>>>>>> 7f2edbd8d86194d072f39c6099806400dd2ea78d
+
+----------------------------- 11/05/2016 ---------------------------------------------------------
+alter table general.zona add column codubigeo character varying(6)
+alter table general.zona add column estado character (1)
+
+alter table cobranza.hoja_ruta add column idsucursal integer
+alter table cobranza.hoja_ruta add column estado character(1)
+----------------------------- 15/05/2016 ---------------------------------------------------------
+
+CREATE TABLE cobranza.parametrocartera
+(
+  idparametrocartera serial NOT NULL,
+  descripcion character varying(120),
+  tipo character(2),
+  estado character(1),
+  CONSTRAINT pkparametrocartera PRIMARY KEY (idparametrocartera )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE cobranza.parametrocartera
+  OWNER TO postgres;
+COMMENT ON TABLE cobranza.parametrocartera
+  IS 'aqui se de define concepto como.. Creditos fuera de cartera, y dentro';
+
+
+
+
+CREATE TABLE cobranza.detalle_parametrocartera
+(
+  iddetalle_parametrocartera serial NOT NULL,
+  idsucursal integer,
+  id_estado_credito integer,
+  idparametrocartera integer,
+  estado character(1),
+  CONSTRAINT pk_detalle_parametrocartera PRIMARY KEY (iddetalle_parametrocartera )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE cobranza.detalle_parametrocartera
+  OWNER TO postgres;
+
+
+
+CREATE OR REPLACE VIEW cobranza.view_estadocredito_cartera AS 
+SELECT dp.id_estado_credito,
+ec.descripcion,dp.estado
+,dp.idsucursal
+                  FROM cobranza.detalle_parametrocartera dp
+                  JOIN credito.estado_credito ec ON ec.id_estado_credito=dp.id_estado_credito AND ec.estado='A'
+                  WHERE dp.idparametrocartera IN (SELECT idparametrocartera FROM cobranza.parametrocartera WHERE tipo='SI' AND estado='A');
+                  ALTER TABLE cobranza.view_estadocredito_cartera
+  OWNER TO postgres;
+
+
+
+DROP TABLE seguridad.tipoempleado;
+
+
+  CREATE OR REPLACE VIEW cobranza.view_cobradores AS 
+SELECT
+u.idusuario
+,(u.nombres||' '||COALESCE(u.appat||' '||u.apmat)) empleado
+,ae.estado
+,ae.idtipoempleado
+,ae.idsucursal
+FROM seguridad.acceso_empresa ae
+JOIN seguridad.usuario u ON u.idusuario=ae.idusuario
+JOIN general.tipoempleado ON tipoempleado.idtipoempleado=ae.idtipoempleado;
+ALTER TABLE cobranza.view_cobradores
+  OWNER TO postgres;
+=======
+---* agregar campo en letra
+ALTER TABLE credito.letra ADD COLUMN pagado character varying(1);
+
+--* agregar campo en la tabla [credito.amortizacion]
+ALTER TABLE credito.amortizacion ADD COLUMN fecha_pago date;
+ALTER TABLE credito.amortizacion ADD COLUMN fecha_registro timestamp without time zone;
+
+--* considerar parametro "mora"
+
+--* agregar campo en tabla [credito.letra]
+ALTER TABLE credito.letra ADD COLUMN fecha_actualizacion date;
+
+---------------------------------------------- 15/05/2016 --------------------------------------------------
+--* considerar paramtero "idrecibo_ingreso"
+INSERT INTO seguridad.param VALUES ('idrecibo_ingreso', '3', 'Id del recibo de ingreso en la tabla tipo_documento', 'N');
+
+
+/* CAMBIOS ULTIMOS ACTUALIZACION BASE */
+
+ALTER TABLE venta.cliente ADD COLUMN linea_credito VARCHAR(1);
+
+DROP TABLE credito.requerimiento_cliente;
+CREATE TABLE credito.requerimiento_cliente
+(
+  idrequerimiento_cliente serial NOT NULL,
+  idrequisito_credito integer,
+  idcliente integer,
+  confirmado character(1),
+  estado character(1),
+  file_url character varying(45),
+  fecha date,
+  con_archivo character varying(1),
+  CONSTRAINT pk_requerimiento_cliente PRIMARY KEY (idrequerimiento_cliente)
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE credito.requerimiento_cliente
+  OWNER TO postgres;
+
+---------------------------------------------- 17/05/2016 --------------------------------------------------
+--* agregar campo en tabla credito.credito
+ALTER TABLE credito.credito ADD COLUMN idmoneda integer;
+
+--* tabla amortizacion
+ALTER TABLE credito.amortizacion ALTER COLUMN idamortizacion DROP DEFAULT;
+DROP SEQUENCE credito.amortizacion_idamortizacion_seq;
+ALTER TABLE credito.amortizacion DROP CONSTRAINT amortizacion_pkey;
+ALTER TABLE credito.amortizacion ADD CONSTRAINT pk_amortizacion PRIMARY KEY (idamortizacion, idletra, idcredito);
+
+--* agregar campo
+ALTER TABLE credito.amortizacion ADD COLUMN mora numeric(10,2);
+
+--* cambiar tipo de dato para monto en amortizacion
+ALTER TABLE credito.amortizacion ALTER COLUMN monto TYPE numeric(10,2);
+
+
+---------------------------------------------- 22/05/2016 --------------------------------------------------
+ALTER TABLE cobranza.visita ADD COLUMN idtipodocumento integer;
+ALTER TABLE cobranza.visita ADD COLUMN serie integer;
+ALTER TABLE cobranza.visita ADD COLUMN numero integer;
+ALTER TABLE cobranza.visita ADD COLUMN monto_cobrado integer;
+ALTER TABLE cobranza.visita ADD COLUMN idempleado integer;
+ALTER TABLE cobranza.visita ADD COLUMN idcredito integer;
+ALTER TABLE cobranza.visita ADD COLUMN estado character(1);
+
+---------------------------------------------- 24/05/2016 --------------------------------------------------
+ALTER TABLE credito.credito ADD COLUMN whit_incindencia_mes character(1) DEFAULT 'N';
+>>>>>>> d307e719a2d104de87c64397e4787c2687a61082
+
+---------------------------------------------- 24/05/2016 --------------------------------------------------
+ALTER TABLE almacen.recepcion ADD COLUMN correlativo integer;
+ALTER TABLE almacen.kardex ADD COLUMN tabla character(6) ;
+
+
+-------------------------------26/05/2016---------------------------------
+----------------------------
+ ALTER TABLE almacen.recepcion drop column correlativo  
+
+
+ -------------------------------27/05/2016---------------------------------
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento
+ , v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda
+ , v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta
+ , td.descripcion AS tipo_documento, (((td.abreviatura::text || ''::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante
+ , m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito
+ ,to_char(v.fecha_venta,'DD/MM/YYYY') fecha_venta_format
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+<<<<<<< HEAD
+
+--------------------------------------- 31/05/2016 -----------------------------------------
+--* crear campos de la tabla venta
+ALTER TABLE venta.venta ADD COLUMN monto_entregado numeric(10,2);
+ALTER TABLE venta.venta ADD COLUMN vuelto numeric(10,2);
+ALTER TABLE venta.venta ADD COLUMN afecta_caja character varying(1);
+ALTER TABLE venta.venta ADD COLUMN idtipopago integer;
+
+--------------------------------------- 01/06/2016 -----------------------------------------
+--* modificar pk de las tablas movimiento_tarjeta y deposito
+ALTER TABLE venta.movimiento_tarjeta DROP CONSTRAINT pk_tarjeta;
+ALTER TABLE venta.movimiento_tarjeta
+  ADD CONSTRAINT pk_movimiento_tarjeta PRIMARY KEY (idsucursal, idoperacion, tabla, idtarjeta);
+  
+ALTER TABLE venta.movimiento_deposito DROP CONSTRAINT pk_mov;
+ALTER TABLE venta.movimiento_deposito
+  ADD CONSTRAINT pk_movimiento_deposito PRIMARY KEY (idsucursal, idoperacion, idcuentas_bancarias, tabla);
+=======
+  ----30/05/2016---
+  alter table venta.cliente
+add column sexo char(1);
+
+create table venta.cliente_direccion
+( idclientedireccion serial PRIMARY KEY,
+  idcliente integer,
+  descripcion varchar(250),
+  estado char(1));
+create table venta.cliente_telefono
+(idclientetelefono serial PRIMARY KEY,
+ idcliente integer,
+ descripcion varchar(250),
+ estado char(1));
+ 
+ 
+ ---------------------------JHONY 01/06/2016
+ 
+ ALTER TABLE almacen.recepcion ADD COLUMN correlativo integer;
+ALTER TABLE almacen.kardex ADD COLUMN tabla character(6) ;
+
+ALTER TABLE almacen.kardex
+   ALTER COLUMN tabla TYPE character(20);
+COMMENT ON COLUMN almacen.kardex.tabla IS 'codigo para referencia y saber de que tabla esta entrando el movimiento';
+
+ALTER TABLE almacen.detalle_almacen
+   ALTER COLUMN cantidad TYPE double precision;
+
+   
+   ALTER TABLE almacen.kardex RENAME idcompra  TO idreferencia;
+COMMENT ON COLUMN almacen.kardex.idreferencia
+  IS 'ID de compra o ID de venta o ID guia o de donde povenga el movimiento';
+COMMENT ON COLUMN almacen.kardex.idreferencia IS 'ID de compra o ID de venta o ID guia o de donde povenga el movimiento';
+
+
+------------------------------------ 05 - 06  - 2016 ------------------------------------------
+CREATE TABLE general.ocupacion
+(
+  idocupacion serial NOT NULL,
+  ocupacion character varying(200),
+  estado character(1),
+  CONSTRAINT pkocupacion PRIMARY KEY (idocupacion )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE general.ocupacion
+  OWNER TO postgres;
+
+  CREATE TABLE venta.cliente_direccion
+(
+  idcliente_direccion serial NOT NULL,
+  idcliente integer,
+  direccion text,
+  estado character(1),
+  CONSTRAINT pkcliente_direccion PRIMARY KEY (idcliente_direccion )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE venta.cliente_direccion
+  OWNER TO postgres;
+
+  CREATE TABLE venta.cliente_representante
+(
+  idcliente_representante serial NOT NULL,
+  idcliente integer,
+  nombre_representante character varying(150),
+  apellidos_representante character varying(150),
+  dni_representante character varying(8),
+  email_representante character varying(120),
+  estado character(2),
+  CONSTRAINT pkcliente_representante PRIMARY KEY (idcliente_representante )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE venta.cliente_representante
+  OWNER TO postgres;
+
+  CREATE TABLE venta.cliente_telefono
+(
+  idcliente_telefono serial NOT NULL,
+  idcliente integer,
+  telefono character varying(30),
+  estado character(1),
+  CONSTRAINT pk_telefonos PRIMARY KEY (idcliente_telefono )
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE venta.cliente_telefono
+  OWNER TO postgres;
+
+
+
+------------------------------------ 05 - 06  - 2016 ------------------------------------------
+DROP VIEW venta.reciboegreso_view;
+DROP VIEW venta.reciboingreso_view;
+DROP VIEW venta.venta_view;
+DROP VIEW credito.credito_view;
+DROP TABLE venta.cliente;
+
+CREATE TABLE venta.cliente
+(
+  idcliente serial NOT NULL,
+  nombres character varying(45),
+  apellidos character varying(250),  
+  dni character varying(8),
+  ruc character varying(11),
+  cliente_email character varying(120),
+  fecha_nac timestamp with time zone,
+  tipo character(1), -- N-> PERSONA NATURAL; J --> PERSONA JURIDICO
+  limite_credito numeric(18,2),
+  linea_credito character varying(1),
+  foto character varying(200),
+  sexo character varying(1),
+  especial character(1) DEFAULT 'N'::bpchar,  
+  centro_laboral character varying(200),
+  direccion_trabajo character varying(200),
+  ingreso_mensual numeric(10,2) DEFAULT 0,
+  idsit_laboral integer,
+  idestado_civil integer,
+  idzona integer,
+  idocupacion integer,
+  fecha_registro timestamp without time zone,
+  estado character(1),
+  CONSTRAINT pk_cliente PRIMARY KEY (idcliente ),
+  CONSTRAINT fk_estado_civil_cliente FOREIGN KEY (idestado_civil)
+      REFERENCES general.estado_civil (idestado_civil) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT fk_sit_laboral_cliente FOREIGN KEY (idsit_laboral)
+      REFERENCES general.sit_laboral (idsit_laboral) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION
+)
+WITH (
+  OIDS=FALSE
+);
+ALTER TABLE venta.cliente
+  OWNER TO postgres;
+COMMENT ON COLUMN venta.cliente.tipo IS 'N-> PERSONA NATURAL; J --> PERSONA JURIDICO';
+
+CREATE OR REPLACE VIEW venta.reciboegreso_view AS 
+ SELECT r.idreciboegreso, r.serie, r.numero, r.tabla, r.idpersona, r.monto, r.idmoneda, r.tipocambio, r.fecha, r.hora, r.concepto, r.idtipopago, r.idamortizacion, r.idusuario, r.idsucursal, r.tipo_egreso, r.idconceptomovimiento, r.idtipodocumento_ref, r.idtipodocumento, r.serie_doc, r.numero_doc, r.estado, 
+        CASE
+            WHEN r.tabla::text = 'CLIENTE'::text THEN ( SELECT c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text)
+               FROM venta.cliente c
+              WHERE c.idcliente = r.idpersona)
+            WHEN r.tabla::text = 'EMPLEADO'::text THEN ( SELECT (u.nombres::text || u.appat::text) || u.apmat::text
+               FROM seguridad.usuario u
+              WHERE u.idusuario = r.idpersona)
+            ELSE NULL::text
+        END AS referencia, (r.serie::text || '-'::text) || r.numero::text AS recibo, r.idtipo_recibo
+   FROM venta.reciboegreso r;
+
+ALTER TABLE venta.reciboegreso_view
+  OWNER TO postgres;
+CREATE OR REPLACE VIEW venta.reciboegreso_view AS 
+ SELECT r.idreciboegreso, r.serie, r.numero, r.tabla, r.idpersona, r.monto, r.idmoneda, r.tipocambio, r.fecha, r.hora, r.concepto, r.idtipopago, r.idamortizacion, r.idusuario, r.idsucursal, r.tipo_egreso, r.idconceptomovimiento, r.idtipodocumento_ref, r.idtipodocumento, r.serie_doc, r.numero_doc, r.estado, 
+        CASE
+            WHEN r.tabla::text = 'CLIENTE'::text THEN ( SELECT c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text)
+               FROM venta.cliente c
+              WHERE c.idcliente = r.idpersona)
+            WHEN r.tabla::text = 'EMPLEADO'::text THEN ( SELECT (u.nombres::text || u.appat::text) || u.apmat::text
+               FROM seguridad.usuario u
+              WHERE u.idusuario = r.idpersona)
+            ELSE NULL::text
+        END AS referencia, (r.serie::text || '-'::text) || r.numero::text AS recibo, r.idtipo_recibo
+   FROM venta.reciboegreso r;
+
+ALTER TABLE venta.reciboegreso_view
+  OWNER TO postgres;
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || ''::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito, to_char(v.fecha_venta, 'DD/MM/YYYY'::text) AS fecha_venta_format
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+  
+  
+  
+  CREATE OR REPLACE VIEW venta.cliente_view AS 
+SELECT 
+c.idcliente
+,trim((apellidos||' '||nombres)) cliente
+,c.dni
+,c.ruc
+,c.cliente_email
+,c.tipo
+,c.foto
+,c.especial
+,MAX(ct.telefono) telefono
+,MAX(cd.direccion) direccion
+,count(cred.idcredito) cant_cred
+,c.estado
+,CASE WHEN c.tipo='J' THEN 'RUC: '||c.ruc ELSE 'DNI: '||c.dni END documento_cliente
+,CASE WHEN c.tipo='N' THEN 'NATURAL' ELSE 'JURIDICO' END tipo_cliente
+FROM venta.cliente c
+LEFT JOIN venta.cliente_telefono ct ON ct.idcliente=c.idcliente
+JOIN venta.cliente_direccion cd ON cd.idcliente=c.idcliente
+LEFT JOIN credito.credito cred ON cred.idcliente=c.idcliente
+
+GROUP BY c.idcliente;
+ALTER TABLE venta.cliente_view
+  OWNER TO postgres;
+
+>>>>>>> 7a237518bf4a3b4d582a6b283a9fb68752ca687a
+
+
+---------------------------------------- 11/06/2016 ----------------------------------------
+--* modificar vista credito.credito_view
+CREATE OR REPLACE VIEW credito.credito_view AS 
+ SELECT c.idcredito, c.idsucursal, c.idventa, c.idcliente, 
+    (l.nombres::text || ' '::text) || COALESCE(l.apellidos, ''::character varying)::text AS cliente, 
+    e.descripcion AS estado_credito, c.nro_credito, c.fecha_credito, 
+    c.nro_letras, c.monto_facturado, c.interes, c.monto_credito, c.pagado, 
+    c.central_riesgo, c.dias_gracia, c.tasa, c.inicial, c.gastos, c.capital, 
+    c.estado, c.idmoneda, m.descripcion AS moneda
+   FROM credito.credito c
+   JOIN venta.cliente l ON l.idcliente = c.idcliente
+   JOIN credito.estado_credito e ON e.id_estado_credito = c.id_estado_credito
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+   
+--* crear vista
+CREATE OR REPLACE VIEW venta.reciboingreso_canje_view AS 
+ SELECT r.idreciboingreso, 
+    (((td.abreviatura::text || '-'::text) || r.serie::text) || '-'::text) || r.numero::text AS nrodoc, 
+    r.idcliente, r.idmoneda, r.fecha, r.canjeado, r.monto, r.concepto, 
+    r.idtipopago, r.idtipo_recibo, m.descripcion AS moneda, 
+    t.descripcion AS tipopago, tr.descripcion AS tipo_recibo, 
+    tr.canjeado AS canjeable, r.idsucursal, r.estado
+   FROM venta.reciboingreso r
+   JOIN general.moneda m ON m.idmoneda = r.idmoneda
+   JOIN venta.tipopago t ON t.idtipopago = r.idtipopago
+   JOIN credito.tipo_recibo tr ON tr.idtipo_recibo = r.idtipo_recibo
+   JOIN venta.tipo_documento td ON td.idtipodocumento = r.idtipodocumento;
+<<<<<<< HEAD
+   
+   
+-------------------------------------------- 25/06/2016 --------------------------------------------
+--* crear tablas para la preventa 
+CREATE TABLE venta.preventa
+(
+  idpreventa serial NOT NULL,
+  idcliente integer,
+  idsucursal integer,
+  idtipoventa integer,
+  idusuario integer,
+  fecha timestamp without time zone,
+  estado character varying(1),
+  idtipodocumento integer,
+  idalmacen integer,
+  subtotal numeric(10,2),
+  valor_igv numeric(10,2),
+  igv numeric(10,2),
+  descuento numeric(10,2),
+  idvendedor integer,
+  idmoneda integer,
+  pendiente character varying(1),
+  CONSTRAINT pk_preventa PRIMARY KEY (idpreventa)
+);
+
+CREATE TABLE venta.detalle_preventa
+(
+  iddetalle_preventa integer NOT NULL,
+  idpreventa integer NOT NULL,
+  idproducto integer,
+  idunidad integer,
+  cantidad integer,
+  precio double precision,
+  estado character varying(1),
+  CONSTRAINT pk_detalle_preventa PRIMARY KEY (iddetalle_preventa, idpreventa)
+);
+
+--* crear vista preventa
+CREATE OR REPLACE VIEW venta.preventa_view AS 
+ SELECT p.idpreventa, p.idcliente, p.idsucursal, p.idtipoventa, p.idusuario, 
+    p.fecha, p.estado, p.idtipodocumento, p.idalmacen, p.subtotal, p.valor_igv, 
+    p.igv, p.descuento, p.idvendedor, p.idmoneda, p.pendiente, 
+    tv.descripcion AS tipoventa, td.descripcion AS tipodocumento, 
+    c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, 
+    u.nombres AS vendedor, m.descripcion AS moneda, 
+    p.subtotal + p.igv - p.descuento AS total
+   FROM venta.preventa p
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = p.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = p.idtipodocumento
+   JOIN venta.cliente c ON c.idcliente = p.idcliente
+   JOIN seguridad.usuario u ON u.idusuario = p.idvendedor
+   JOIN general.moneda m ON m.idmoneda = p.idmoneda;
+
+----------------------------------------------------- 22/06/2016 --------------------------------------------------
+ALTER TABLE venta.cliente_direccion ADD COLUMN dir_principal character(1) DEFAULT 'N';
+
+CREATE TABLE general.ubigeo (
+    idubigeo character(6) NOT NULL,
+    descripcion text
+);
+
+-- Solicitar el sql DE UBIGEO POR MAIL si no tienen la TABLA y evitar la carga de esTE ARCHIVO
+
+ALTER TABLE general.zona RENAME COLUMN codubigeo TO idubigeo;
+
+
+CREATE OR REPLACE VIEW general.ubigeo_view AS 
+ SELECT ubigeo.idubigeo AS ubi_id, ubigeo.descripcion AS ubi_descripcion, substr(ubigeo.idubigeo::text, 1, 2) AS ubi_dpto, substr(ubigeo.idubigeo::text, 3, 2) AS ubi_prov, substr(ubigeo.idubigeo::text, 5, 2) AS ubi_dist
+   FROM general.ubigeo;
+
+ALTER TABLE general.ubigeo_view
+  OWNER TO postgres;
+----------------------------------------------------- 22/06/2016 --------------------------------------------------
+
+-- tabla zona
+CREATE TABLE general.zona
+(
+  idzona serial NOT NULL,
+  idubigeo character varying(6),
+  zona character varying(250),
+  estado character(1),
+  CONSTRAINT pk_zona PRIMARY KEY (idzona)
+);
+
+----------------------------------------------------- 07/07/2016 --------------------------------------------------
+CREATE OR REPLACE VIEW venta.reciboingreso_view AS 
+ SELECT r.idreciboingreso, r.serie, r.numero, r.idcliente, r.monto, r.idmoneda, r.tipocambio, r.fecha, r.hora, r.concepto, r.idtipopago, r.idamortizacion, r.idusuario, r.idsucursal, r.tipo_ingreso, r.idconceptomovimiento, r.idtipodocumento_ref, r.idtipodocumento, r.serie_doc, r.numero_doc, r.estado, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, (r.serie::text || '-'::text) || r.numero::text AS recibo
+   FROM venta.reciboingreso r
+   JOIN venta.cliente c ON c.idcliente = r.idcliente;
+
+ALTER TABLE venta.reciboingreso_view
+  OWNER TO postgres;
+----------------------------------------------------- 07/07/2016 --------------------------------------------------
+
+----------------------------------------------------- 26/07/2016 --------------------------------------------------
+-- agregar campo en venta
+ALTER TABLE venta.venta ADD COLUMN idpreventa integer;
+
+-- ln 2043 -j
+----------------------------------------------------- 26/07/2016 --------------------------------------------------
+
+----------------------------------------------------- 01/08/2016 --------------------------------------------------
+-- corrigiendo vista de cuentas bancarias, añadiendo columnas en la vista
+CREATE OR REPLACE VIEW general.view_cuentas_bancarias AS 
+ SELECT cb.idcuentas_bancarias,
+    cb.idbanco,
+    cb.idsucursal,
+    cb.nro_cuenta,
+    cb.fecha_registro,
+    cb.hora_registro,
+    cb.estado,
+    cb.idmoneda,
+    (((b.abreviatura::text || ' -'::text) || m.abreviatura::text) || '- '::text) || cb.nro_cuenta::text AS cuenta
+    ,m.descripcion moneda
+    ,sucursal.descripcion sucursal
+    ,b.banco
+   FROM general.cuentas_bancarias cb
+     JOIN general.banco b ON b.idbanco = cb.idbanco
+     JOIN general.moneda m ON m.idmoneda = cb.idmoneda
+     JOIN seguridad.sucursal ON sucursal.idsucursal=cb.idsucursal;
+
+ALTER TABLE general.view_cuentas_bancarias
+  OWNER TO postgres;
+----------------------------------------------------- 01/08/2016 --------------------------------------------------
+
+----------------------------------------------------- 02/08/2016 ---------------------------------------
+-- agregar campo en compra
+ALTER TABLE compra.compra ADD COLUMN afecta_caja character varying(1);
+
+-- agregar campo em detalle compra serie
+ALTER TABLE compra.detalle_compra_serie ADD COLUMN iddetalle_compra integer;
+-- modificar pk tabla 
+ALTER TABLE compra.detalle_compra_serie DROP CONSTRAINT pk_detalle_compra_serie;
+ALTER TABLE compra.detalle_compra_serie ADD CONSTRAINT pk_detalle_compra_serie PRIMARY KEY (idcompra, iddetalle_compra, serie);
+
+
+--ln 2043 -j
+
+----------------------------------------------------- 03/08/2016 --------------------------------------------------
+--Añadiendo comentarios en tabla tipo documento pa no confundirse
+COMMENT ON COLUMN venta.tipo_documento.mostrar_en_recibos IS 'Para recibo ingreso';
+COMMENT ON COLUMN venta.tipo_documento.mostrar_en_recibo IS 'Para recibo egreso';
+
+--Añadiendo campo del codigo de sunat, si en el futuro lo usan y/o sea necesario
+ALTER TABLE venta.tipo_documento ADD COLUMN codsunat character varying(2);
+
+----------------------------------------------------- 03/08/2016 --------------------------------------------------
+
+
+
+
+
+
+
+---------------------------------------------------------------------------- 09/10/2016
+-- añadiendo campos en la vista para mis reportes
+
+CREATE OR REPLACE VIEW venta.reciboingreso_view AS 
+ SELECT r.idreciboingreso, r.serie, r.numero, r.idcliente, r.monto, r.idmoneda, r.tipocambio, r.fecha, r.hora, r.concepto, r.idtipopago, r.idamortizacion, r.idusuario, r.idsucursal, r.tipo_ingreso, r.idconceptomovimiento, r.idtipodocumento_ref, r.idtipodocumento, r.serie_doc, r.numero_doc, r.estado, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, (r.serie::text || '-'::text) || r.numero::text AS recibo, r.canjeado, COALESCE(c.apellidos::text, ''::text) || c.nombres::text AS cliente_x_apellidos, u.usuario AS cajero, m.descripcion AS moneda, m.abreviatura AS abrev_moneda, m.simbolo AS simbolo_moneda, tp.descripcion AS tipopago
+   FROM venta.reciboingreso r
+   JOIN venta.cliente c ON c.idcliente = r.idcliente
+   JOIN general.moneda m ON m.idmoneda = r.idmoneda
+   JOIN venta.tipopago tp ON tp.idtipopago = r.idtipopago
+   JOIN seguridad.usuario u ON u.idusuario = r.idusuario;
+
+ALTER TABLE venta.reciboingreso_view
+  OWNER TO postgres;
+  
+  
+  
+  
+------------------------------------------------ 16/11/2016 ------------------------------------------------
+-- primero borrar todas las vistas que tengan que ver con las tablas que se esta alterando( dtalle_venta)
+-- es para corregir el redonde en las ventas
+ALTER TABLE venta.detalle_preventa ALTER COLUMN cantidad TYPE double precision;
+ALTER TABLE almacen.detalle_guia_remision ALTER COLUMN cantidad TYPE double precision;
+DROP VIEW venta.venta_view;
+DROP VIEW venta.venta_head_view;
+DROP VIEW venta.venta_detalle_view;
+
+ALTER TABLE venta.venta ALTER COLUMN subtotal TYPE double precision;
+
+ 
+ALTER TABLE venta.detalle_venta ALTER COLUMN cantidad TYPE double precision;
+
+
+-- creando las vistas nuevamente
+CREATE OR REPLACE VIEW venta.venta_detalle_view AS 
+ SELECT dv.idventa,
+    dv.descripcion AS producto,
+    u.descripcion AS unidadmedida,
+    v.fecha_venta AS fecha_operacion,
+    COALESCE(cli.nombres::text || ' '::text, ''::text) || COALESCE(cli.apellidos, ''::character varying)::text AS cliente,
+    tp.descripcion AS tipopago,
+    suc.descripcion AS sucursal,
+    tv.descripcion AS tipoventa,
+    m.descripcion AS moneda,
+    m.simbolo,
+    m.abreviatura,
+    td.descripcion AS tipodocumento,
+    al.descripcion AS almacen,
+    v.correlativo AS numero,
+    v.serie,
+    v.idcliente,
+    v.idsucursal,
+    v.idtipoventa,
+    v.idtipodocumento,
+    v.idmoneda,
+    v.idtipopago,
+    v.estado,
+    v.subtotal AS subtotal_venta,
+    v.igv AS igv_venta,
+    v.descuento AS descuento_venta,
+    td.abreviatura AS simbolo_tipodoc,
+    dv.idproducto,
+    prod.idlinea,
+    prod.idmodelo,
+    prod.idcategoria,
+    prod.idmarca,
+    prod.idmaterial,
+    prod.idcolor,
+    dv.precio AS precio_venta_detalle,
+    dv.costo AS precio_costo_detalle,
+    dv.cantidad AS cantidad_detalle,
+    v.cambio_moneda,
+    COALESCE(dv.cantidad, 0::numeric)::double precision * dv.precio AS subtotal,
+    v.idvendedor,
+    (COALESCE(emp.nombres::text || ' '::text, ''::text) || COALESCE(emp.appat::text || ' '::text, ''::text)) || COALESCE(emp.apmat, ''::character varying)::text AS vendedor
+   FROM venta.detalle_venta dv
+     JOIN venta.venta v ON v.idventa = dv.idventa
+     JOIN compra.producto prod ON prod.idproducto = dv.idproducto
+     JOIN compra.unidad u ON u.idunidad = dv.idunidad
+     JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+     JOIN venta.cliente cli ON cli.idcliente = v.idcliente
+     JOIN seguridad.sucursal suc ON suc.idsucursal = v.idsucursal
+     JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+     JOIN general.moneda m ON m.idmoneda = v.idmoneda
+     JOIN almacen.almacen al ON al.idalmacen = v.idalmacen
+     JOIN seguridad.usuario usu ON usu.idusuario = v.idusuario
+     LEFT JOIN venta.tipopago tp ON tp.idtipopago = v.idtipopago
+     JOIN seguridad.usuario emp ON emp.idusuario = v.idvendedor;
+
+
+
+CREATE OR REPLACE VIEW venta.venta_head_view AS 
+ SELECT venta_detalle_view.idventa,
+    venta_detalle_view.fecha_operacion,
+    btrim(venta_detalle_view.cliente) AS cliente,
+    venta_detalle_view.tipopago,
+    venta_detalle_view.sucursal,
+    venta_detalle_view.tipoventa,
+    venta_detalle_view.moneda AS msimbolo,
+    venta_detalle_view.abreviatura,
+    venta_detalle_view.tipodocumento,
+    venta_detalle_view.almacen,
+    venta_detalle_view.serie,
+    venta_detalle_view.numero,
+    venta_detalle_view.idcliente,
+    venta_detalle_view.idsucursal,
+    venta_detalle_view.idtipoventa,
+    venta_detalle_view.idtipodocumento,
+    venta_detalle_view.idtipopago,
+    venta_detalle_view.estado,
+    venta_detalle_view.subtotal_venta,
+    venta_detalle_view.igv_venta,
+    venta_detalle_view.simbolo_tipodoc,
+    venta_detalle_view.idmoneda,
+    venta_detalle_view.vendedor,
+    venta_detalle_view.idvendedor
+   FROM venta.venta_detalle_view
+  GROUP BY venta_detalle_view.idventa, venta_detalle_view.fecha_operacion, venta_detalle_view.cliente, venta_detalle_view.tipopago, venta_detalle_view.sucursal, venta_detalle_view.tipoventa, venta_detalle_view.moneda, venta_detalle_view.simbolo, venta_detalle_view.abreviatura, venta_detalle_view.tipodocumento, venta_detalle_view.almacen, venta_detalle_view.serie, venta_detalle_view.numero, venta_detalle_view.idcliente, venta_detalle_view.idsucursal, venta_detalle_view.idtipoventa, venta_detalle_view.idtipodocumento, venta_detalle_view.idtipopago, venta_detalle_view.estado, venta_detalle_view.subtotal_venta, venta_detalle_view.igv_venta, venta_detalle_view.simbolo_tipodoc, venta_detalle_view.idmoneda, venta_detalle_view.vendedor, venta_detalle_view.idvendedor;
+
+ALTER TABLE venta.venta_head_view
+  OWNER TO postgres;
+
+ALTER TABLE venta.venta_detalle_view
+  OWNER TO postgres;
+
+  CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa,
+    v.idcliente,
+    v.idsucursal,
+    v.idtipoventa,
+    v.idusuario,
+    v.fecha_venta,
+    v.fecha_registro,
+    v.estado,
+    v.serie,
+    v.correlativo,
+    v.idtipodocumento,
+    v.idalmacen,
+    v.despachado,
+    v.subtotal,
+    v.valor_igv,
+    v.igv,
+    v.descuento,
+    v.idvendedor,
+    v.cancelado,
+    v.pasa_despacho,
+    v.idmoneda,
+    v.cambio_moneda,
+    c.nombres,
+    c.apellidos,
+    (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres,
+    tv.descripcion AS tipo_venta,
+    td.descripcion AS tipo_documento,
+    (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante,
+    m.descripcion AS moneda,
+    v.subtotal + v.igv - v.descuento AS total,
+    v.con_credito,
+    to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format,
+    c.ruc,
+    c.dni
+   FROM venta.venta v
+     JOIN venta.cliente c ON c.idcliente = v.idcliente
+     JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+     JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+     JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+
+ALTER TABLE venta.venta_view
+  OWNER TO postgres;
+
+
+--------------------12-12-2017
+
+CREATE OR REPLACE VIEW venta.notacredito_view AS 
+ SELECT n.idnotacredito, n.fecha, (n.serie::text || '-'::text) || n.numero::text AS nrodocumento, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, n.subtotal, n.igv, n.subtotal + n.igv AS total, n.descripcion AS motivo, (((t.abreviatura::text || ' '::text) || n.serie_ref::text) || '-'::text) || n.numero_ref::text AS tipodoc_ref, n.estado, n.idsucursal, n.idusuario, n.idmoneda, m.descripcion AS moneda, t.descripcion AS tipo_documento_ref, c.dni, c.ruc, c.direccion_principal AS direccion, n.serie, n.numero, n.numero AS correlativo, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS full_nombres, to_char(n.fecha::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, venta.tipo_documento AS documento_modifica, venta.comprobante AS comprobante_modifica, n.descuento, n.total_con_descuento AS total_desc, venta.doc_cliente
+,venta.vendedor
+   FROM venta.notacredito n
+   JOIN venta.cliente c ON c.idcliente = n.idcliente
+   JOIN venta.tipo_documento t ON t.idtipodocumento = n.iddocumento_ref
+   JOIN venta.venta_view venta ON venta.idventa = n.idventa
+   JOIN general.moneda m ON m.idmoneda = n.idmoneda;
+
+ALTER TABLE venta.notacredito_view
+  OWNER TO postgres;

@@ -1,0 +1,1288 @@
+--------------------------------------------- 17/08/2016
+-- crear tabla nueva
+CREATE TABLE compra.forma_pago_compra
+(
+  idforma_pago_compra serial NOT NULL,
+  descripcion character varying(45),
+  nrodias integer,
+  estado character varying(1),
+  CONSTRAINT pk_forma_pago_compra PRIMARY KEY (idforma_pago_compra)
+);
+
+-- modificar campos de tabla compra
+ALTER TABLE compra.compra ADD COLUMN serie character varying(8);
+ALTER TABLE compra.compra ADD COLUMN idforma_pago_compra integer;
+ALTER TABLE compra.compra ADD COLUMN nro_letras integer;
+
+-- modificar estructura tabla detalle_almacen_serie
+DROP TABLE almacen.detalle_almacen_serie;
+CREATE TABLE almacen.detalle_almacen_serie
+(
+  iddetalle_almacen integer NOT NULL,
+  idalmacen integer,
+  idproducto integer,
+  idunidad integer,
+  serie character varying(30) NOT NULL,
+  fecha_ingreso date,
+  tabla_ingreso character varying(5),
+  idtabla_ingreso integer,
+  despachado character varying(1), -- S|N
+  fecha_salida date,
+  tabla_salida character varying(5),
+  idtabla_salida integer,
+  estado character(1),
+  CONSTRAINT pk_detalle_alamcen_serie PRIMARY KEY (iddetalle_almacen, serie)
+);
+
+-- agregar campo si no existe
+ALTER TABLE compra.detalle_compra ADD COLUMN costo numeric(10,4);
+ALTER TABLE compra.detalle_compra ADD COLUMN idalmacen integer;
+
+--------------------------------------------------------------- 28/08/2016
+-- modificar estructura tabla cronograma compra
+DROP TABLE compra.cronograma_pago;
+CREATE TABLE compra.cronograma_pago
+(
+  idcompra integer NOT NULL,
+  letra integer NOT NULL,
+  monto_letra numeric(18,2),
+  idmoneda integer,
+  fecha_vencimiento date,
+  cancelado character(1),
+  idpagocompra integer,
+  fecha_pago date,
+  saldo numeric(18,2),
+  estado character(1),
+  CONSTRAINT pk_compra_pago_compra PRIMARY KEY (idcompra, letra),
+  CONSTRAINT fk_cronograma_pago_compra FOREIGN KEY (idcompra)
+      REFERENCES compra.compra (idcompra) MATCH SIMPLE
+      ON UPDATE NO ACTION ON DELETE NO ACTION
+);
+
+-- modificar estructura de la tabla pago compra
+DROP TABLE compra.pago_compra;
+CREATE TABLE compra.pago_compra
+(
+  idpagocompra serial NOT NULL,
+  idcompra integer NOT NULL,
+  letra integer NOT NULL,
+  monto numeric(18,2),
+  fecha date,
+  idmoneda integer,
+  cambio_moneda numeric(10,4),
+  descripcion character varying(250),
+  idusuario integer,
+  fecha_registro timestamp without time zone,
+  estado character(1) DEFAULT 1, -- 1 = activo...
+  CONSTRAINT pk_pago_compra PRIMARY KEY (idpagocompra)
+);
+
+-- modificar tabla de recepcion, segun se ve en el codigo php
+DROP VIEW almacen.view_recepcion;
+
+DROP TABLE almacen.recepcion;
+
+CREATE TABLE almacen.recepcion
+(
+  idrecepcion serial NOT NULL,
+  idcompra integer NOT NULL,
+  idproducto integer NOT NULL,
+  idalmacen integer NOT NULL,
+  idunidad integer,
+  cant_recepcionada double precision,
+  tipo_docu character(2),
+  serie character(8),
+  numero character(8),
+  observacion character(50),
+  estado character(1),
+  fecha date,
+  hora time with time zone,
+  idusuario integer NOT NULL,
+  correlativo integer,
+  CONSTRAINT pk_recepcion PRIMARY KEY (idrecepcion)
+);
+
+CREATE OR REPLACE VIEW almacen.view_recepcion AS 
+ SELECT c.idcompra, p.nombre, sum(r.cant_recepcionada) AS cantidad, r.fecha
+   FROM compra.compra c
+   JOIN almacen.recepcion r ON r.idcompra = c.idcompra
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+  WHERE r.estado = 'A'::bpchar
+  GROUP BY c.idcompra, p.nombre, r.fecha
+  ORDER BY c.idcompra DESC;
+  
+------------------------------------------------------------ 29/08/2016
+-- cambiar campo de la tabla compra
+DROP VIEW compra.compra_view;
+
+ALTER TABLE compra.compra RENAME nrodocumento  TO numero;
+
+CREATE OR REPLACE VIEW compra.compra_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, t.descripcion AS tipo_documento, 
+ coalesce(c.serie||'-','')||c.numero as nrodocumento, c.subtotal, c.igv, c.subtotal + c.igv AS total, c.estado, c.recepcionado, c.fecha_compra, 
+ to_char(c.fecha_compra, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idsucursal
+   FROM compra.compra c
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+--- 02/09/2016 
+--agregar campo codigo_ant para hacer la carga masiba d precios 
+-- para que han hecho esta vaina?????
+-- no modifiquen mi archivo, cada uno tiene su propio CAMBIOS_BD
+-- ALTER TABLE compra.producto ADD COLUMN codigo_anterior character varying(20);
+
+----------------------------------------------------------------- 04/09/2016
+-- agregar campo en pedido
+ALTER TABLE compra.pedido ADD COLUMN aprobado character(1);
+
+-- modificar campo de la tabla pedido
+ALTER TABLE compra.pedido ALTER COLUMN descripcion TYPE character varying(100);
+
+----------------------------------------------------------------- 07/09/2016
+-- crear vistas
+CREATE OR REPLACE VIEW compra.recepcion_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, ((t.abreviatura::text || '-'::text) || COALESCE(c.serie::text || '-'::text, ''::text)) || c.numero::text AS documento, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, count(dc.*) AS cantidad, max(r.fecha) AS fecha_recepcion, to_char(c.fecha_compra, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idtipodocumento, c.serie, c.numero
+   FROM compra.compra c
+   LEFT JOIN compra.detalle_compra dc ON dc.idcompra = c.idcompra AND dc.recepcionado::text = 'S'::text AND dc.estado::text = 'A'::text
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   LEFT JOIN almacen.recepcion r ON r.idcompra = c.idcompra
+  GROUP BY c.idcompra, p.nombre, t.abreviatura, c.serie, c.numero, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, c.idtipodocumento;
+
+-- agregar campo en tabla recepcion
+ALTER TABLE almacen.recepcion ADD COLUMN iddetalle_compra integer;
+
+----------------------------------------------------------------------08/09/2016
+-- agregar campos en compra
+ALTER TABLE compra.detalle_compra ADD COLUMN afecta_stock character varying(1);
+ALTER TABLE compra.detalle_compra ADD COLUMN afecta_serie character varying(1);
+
+-- agregar campo en detalle almacen
+ALTER TABLE almacen.detalle_almacen ADD COLUMN idrecepcion integer;
+ALTER TABLE almacen.detalle_almacen ADD COLUMN iddespacho integer;
+
+ALTER TABLE almacen.detalle_almacen_serie ADD COLUMN idrecepcion integer;
+ALTER TABLE almacen.detalle_almacen_serie ADD COLUMN iddespacho integer;
+
+------------------------------------------------------------------------- 09/09/2016 
+-- modificar campo
+ALTER TABLE almacen.recepcion ALTER COLUMN tipo_docu TYPE character varying(2);
+ALTER TABLE almacen.recepcion ALTER COLUMN hora TYPE time without time zone;
+
+-- estructura de la tabla kardex, revisar si algo no esta bien
+/*
+CREATE TABLE almacen.kardex
+(
+  correlativo integer NOT NULL,
+  tipo_movimiento integer NOT NULL,
+  fecha_emision date,
+  idproducto integer NOT NULL,
+  idalmacen integer NOT NULL,
+  idunidad integer,
+  cantidad double precision,
+  precio_unit_venta_s double precision,
+  precio_unit_venta_d double precision,
+  costo_unit_s double precision,
+  costo_unit_d double precision,
+  importe_s double precision,
+  importe_d double precision,
+  idreferencia integer,
+  idtercero integer,
+  tipo_docu integer,
+  serie character varying(8),
+  numero character varying(8),
+  observacion character varying(100),
+  estado character(1),
+  annio integer,
+  periodo character varying(2),
+  idusuario integer,
+  fecha_registro date,
+  hora time without time zone,
+  tabla character varying(20),
+  idsucursal integer,
+  CONSTRAINT kardex_pk PRIMARY KEY (correlativo, tipo_movimiento, idproducto, idalmacen)
+);
+*/
+
+-------------------------------------------------------------------------------- 10/09/2016
+-- modificar vista recepcion
+CREATE OR REPLACE VIEW compra.recepcion_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, ((t.abreviatura::text || '-'::text) || COALESCE(c.serie::text || '-'::text, ''::text)) || c.numero::text AS documento, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, count(DISTINCT dc.iddetalle_compra) AS cantidad, max(r.fecha) AS fecha_recepcion, to_char(c.fecha_compra, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idtipodocumento, c.serie, c.numero
+   FROM compra.compra c
+   LEFT JOIN compra.detalle_compra dc ON dc.idcompra = c.idcompra AND dc.recepcionado::text = 'S'::text AND dc.estado::text = 'A'::text
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   LEFT JOIN almacen.recepcion r ON r.idcompra = c.idcompra
+  GROUP BY c.idcompra, p.nombre, t.abreviatura, c.serie, c.numero, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, c.idtipodocumento;
+
+  
+---------------------------------------------------------------------------------- 12/09/2016
+-- agregar campo en tablas de almacen
+ALTER TABLE almacen.detalle_almacen ADD COLUMN idsucursal integer;
+ALTER TABLE almacen.detalle_almacen_serie ADD COLUMN idsucursal integer;
+
+----------------------------------------------------------------------------------13/09/2016
+-- agregar columnas en tabla detalle preventa
+ALTER TABLE venta.detalle_preventa ADD COLUMN idalmacen integer;
+ALTER TABLE venta.detalle_preventa ADD COLUMN serie text;
+
+----------------------------------------------------------------------------------16/09/2016
+-- modificar vista
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito, to_char(v.fecha_venta, 'DD/MM/YYYY'::text) AS fecha_venta_format
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+   
+----------------------------------------------------------------------------------17/09/2016
+-- crear tabla para el despacho
+CREATE TABLE almacen.despacho
+(
+  iddespacho serial NOT NULL,
+  idreferencia integer NOT NULL,
+  referencia character varying(5),
+  idproducto integer NOT NULL,
+  idalmacen integer NOT NULL,
+  cant_despachado double precision,
+  tipo_docu character varying(2),
+  serie character(8),
+  numero character(8),
+  observacion character(50),
+  estado character(1),
+  fecha date,
+  hora time without time zone,
+  idusuario integer NOT NULL,
+  correlativo integer,
+  idunidad integer,
+  iddetalle_referencia integer,
+  CONSTRAINT pk_despacho PRIMARY KEY (iddespacho)
+);
+
+-- agregar campos en tabla venta
+ALTER TABLE venta.detalle_venta ADD COLUMN costo numeric(10,4);
+ALTER TABLE venta.detalle_venta ADD COLUMN idalmacen integer;
+ALTER TABLE venta.detalle_venta ADD COLUMN afecta_stock character varying(1);
+ALTER TABLE venta.detalle_venta ADD COLUMN afecta_serie character varying(1);
+
+-------------------------------------------------------------------------------18/09/2016
+-- eliminar vista
+DROP VIEW venta.venta_view;
+
+-- modificar columna en tabla venta
+ALTER TABLE venta.venta ALTER COLUMN fecha_venta TYPE date;
+
+-- crear vista nuevamente
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito, to_char(v.fecha_venta, 'DD/MM/YYYY'::text) AS fecha_venta_format
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+   
+---------------------------------------------------------------------------------19/09/2016
+-- eliminar vista
+DROP VIEW compra.recepcion_view;
+
+-- crear vista
+CREATE OR REPLACE VIEW almacen.recepcion_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, ((t.abreviatura::text || '-'::text) || COALESCE(c.serie::text || '-'::text, ''::text)) || c.numero::text AS documento, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, count(DISTINCT dc.iddetalle_compra) AS cantidad, max(r.fecha) AS fecha_recepcion, to_char(c.fecha_compra, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idtipodocumento, c.serie, c.numero
+   FROM compra.compra c
+   LEFT JOIN compra.detalle_compra dc ON dc.idcompra = c.idcompra AND dc.recepcionado::text = 'S'::text AND dc.estado::text = 'A'::text
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   LEFT JOIN almacen.recepcion r ON r.idcompra = c.idcompra
+  GROUP BY c.idcompra, p.nombre, t.abreviatura, c.serie, c.numero, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, c.idtipodocumento;
+
+-- crear vista despacho
+CREATE OR REPLACE VIEW almacen.despacho_view AS 
+ SELECT v.idventa, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, ((t.abreviatura::text || '-'::text) || COALESCE(v.serie::text || '-'::text, ''::text)) || v.correlativo::text AS documento, v.estado, v.despachado, v.fecha_venta, v.idsucursal, count(DISTINCT dv.iddetalle_venta) AS cantidad, max(d.fecha) AS fecha_despacho, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_es, v.idtipodocumento, v.serie, v.correlativo as numero
+   FROM venta.venta v
+   LEFT JOIN venta.detalle_venta dv ON dv.idventa = v.idventa AND dv.despachado::text = 'S'::text AND dv.estado::text = 'A'::text
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = v.idtipodocumento
+   LEFT JOIN almacen.despacho d ON d.idreferencia = v.idventa AND d.referencia::text = 'V'::text
+  GROUP BY v.idventa, c.nombres, c.apellidos, t.abreviatura, v.serie, v.correlativo, v.estado, v.despachado, v.fecha_venta, v.idsucursal, v.idtipodocumento;
+
+
+-------------------------------------------------------------------------------------23/09/2016
+-- modificar campo detalle_caja
+ALTER TABLE caja.detalle_caja ALTER COLUMN tabla TYPE character varying(30);
+
+-- modificar vista
+CREATE OR REPLACE VIEW venta.reciboingreso_view AS 
+ SELECT r.idreciboingreso, r.serie, r.numero, r.idcliente, r.monto, r.idmoneda, r.tipocambio, r.fecha, r.hora, r.concepto, r.idtipopago, r.idamortizacion, r.idusuario, r.idsucursal, r.tipo_ingreso, r.idconceptomovimiento, r.idtipodocumento_ref, r.idtipodocumento, r.serie_doc, r.numero_doc, r.estado, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, (r.serie::text || '-'::text) || r.numero::text AS recibo, r.canjeado
+   FROM venta.reciboingreso r
+   JOIN venta.cliente c ON c.idcliente = r.idcliente;
+   
+-- modificar vista credito_vie
+CREATE OR REPLACE VIEW credito.credito_view AS 
+ SELECT c.idcredito, c.idsucursal, c.idventa, c.idcliente, (l.nombres::text || ' '::text) || COALESCE(l.apellidos, ''::character varying)::text AS cliente, e.descripcion AS estado_credito, c.nro_credito, c.fecha_credito, c.nro_letras, c.monto_facturado, c.interes, c.monto_credito, c.pagado, c.central_riesgo, c.dias_gracia, c.tasa, c.inicial, c.gastos, c.capital, c.estado, c.idmoneda, m.descripcion AS moneda, (g.nombres::text || ' '::text) || COALESCE(g.apellidos, ''::character varying)::text AS garante
+   FROM credito.credito c
+   JOIN venta.cliente l ON l.idcliente = c.idcliente
+   JOIN credito.estado_credito e ON e.id_estado_credito = c.id_estado_credito
+   LEFT JOIN venta.cliente g ON g.idcliente = c.idgarante
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+
+   
+-------------------------------------------------------------------------------------24/09/2016
+-- considerar parametros "idrecibo_ingreso", "idrecibo_egreso", "idnota_credito"
+
+-- crear tabla nota credito
+CREATE TABLE venta.notacredito
+(
+  idnotacredito serial NOT NULL,
+  idsucursal integer,
+  idventa integer,
+  idcliente integer,
+  serie character varying(6),
+  numero character varying(8),
+  idtipodocumento integer,
+  fecha date,
+  descripcion text,
+  subtotal numeric(10,4),
+  igv numeric(10,4),
+  idmoneda integer,
+  cambio_moneda numeric(10,4),
+  idusuario integer,
+  iddocumento_ref integer,
+  serie_ref character varying(6),
+  numero_ref character varying(8),
+  fecha_ref date,
+  motivo character varying(30),
+  estado character(1),
+  CONSTRAINT pk_notacredito PRIMARY KEY (idnotacredito)
+);
+
+-- crear tabla detalle nota credito
+CREATE TABLE venta.detalle_notacredito
+(
+  iddetalle_notacredito serial NOT NULL,
+  idnotacredito integer NOT NULL,
+  idproducto integer,
+  descripcion text,
+  idunidad integer,
+  cantidad integer,
+  precio double precision,
+  estado character varying(1),
+  idalmacen integer,
+  afecta_stock character varying(1),
+  afecta_serie character varying(1),
+  CONSTRAINT pk_detalle_notacredito PRIMARY KEY (iddetalle_notacredito)
+);
+
+---------------------------------------------------------------------------- 30/09/2016
+-- modificar vista venta_view
+CREATE OR REPLACE VIEW venta.venta_view AS 
+ SELECT v.idventa, v.idcliente, v.idsucursal, v.idtipoventa, v.idusuario, v.fecha_venta, v.fecha_registro, v.estado, v.serie, v.correlativo, v.idtipodocumento, v.idalmacen, v.despachado, v.subtotal, v.valor_igv, v.igv, v.descuento, v.idvendedor, v.cancelado, v.pasa_despacho, v.idmoneda, v.cambio_moneda, c.nombres, c.apellidos, (c.nombres::text || ' '::text) || c.apellidos::text AS full_nombres, tv.descripcion AS tipo_venta, td.descripcion AS tipo_documento, (((td.abreviatura::text || '-'::text) || v.serie::text) || '-'::text) || v.correlativo::text AS comprobante, m.descripcion AS moneda, v.subtotal + v.igv - v.descuento AS total, v.con_credito, to_char(v.fecha_venta::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_venta_format, c.ruc, c.dni
+   FROM venta.venta v
+   JOIN venta.cliente c ON c.idcliente = v.idcliente
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = v.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = v.idtipodocumento
+   JOIN general.moneda m ON m.idmoneda = v.idmoneda;
+   
+-- agregar campo en tablon
+ALTER TABLE venta.detalle_venta_serie ADD COLUMN despachado character varying(1);
+
+----------------------------------------------------------------------------- 06/10/2016
+-- agregar campo en tabla
+ALTER TABLE venta.notacredito ADD COLUMN monto_ref numeric(10,2);
+ALTER TABLE venta.detalle_notacredito ADD COLUMN serie character varying(30);
+
+----------------------------------------------------------------------------- 07/10/2016
+-- agregar campo en tabla recepcion
+ALTER TABLE almacen.recepcion ADD COLUMN referencia character varying(5);
+
+-- modificar vista
+CREATE OR REPLACE VIEW almacen.recepcion_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, ((t.abreviatura::text || '-'::text) || COALESCE(c.serie::text || '-'::text, ''::text)) || c.numero::text AS documento, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, count(DISTINCT dc.iddetalle_compra) AS cantidad, max(r.fecha) AS fecha_recepcion, to_char(c.fecha_compra, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idtipodocumento, c.serie, c.numero
+   FROM compra.compra c
+   LEFT JOIN compra.detalle_compra dc ON dc.idcompra = c.idcompra AND dc.recepcionado::text = 'S'::text AND dc.estado::text = 'A'::text
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   LEFT JOIN almacen.recepcion r ON r.idcompra = c.idcompra AND r.referencia::text = 'C'::text
+  GROUP BY c.idcompra, p.nombre, t.abreviatura, c.serie, c.numero, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, c.idtipodocumento;
+
+-- modificar campos
+ALTER TABLE venta.notacredito ALTER COLUMN subtotal TYPE numeric(10,2);
+ALTER TABLE venta.notacredito ALTER COLUMN igv TYPE numeric(10,2);
+
+-- crear vista
+CREATE OR REPLACE VIEW venta.notacredito_view AS 
+ SELECT n.idnotacredito, n.fecha, (n.serie::text || '-'::text) || n.numero::text AS nrodocumento, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, n.subtotal, n.igv, n.subtotal + n.igv AS total, n.motivo, (((t.abreviatura::text || ' '::text) || n.serie_ref::text) || '-'::text) || n.numero_ref::text AS tipodoc_ref, n.estado, n.idsucursal, n.idusuario, n.idmoneda, m.descripcion AS moneda, t.descripcion AS tipo_documento_ref, c.dni, c.ruc
+   FROM venta.notacredito n
+   JOIN venta.cliente c ON c.idcliente = n.idcliente
+   JOIN venta.tipo_documento t ON t.idtipodocumento = n.iddocumento_ref
+   JOIN general.moneda m ON m.idmoneda = n.idmoneda;
+   
+-- agregar campo campo tabla notacredito
+ALTER TABLE venta.notacredito ADD COLUMN rucdni character varying(11);
+
+
+------------------------------------------------------------------------------ 08/10/2016
+-- agregar campo en compra
+ALTER TABLE compra.compra ADD COLUMN flete numeric(10,2);
+
+------------------------------------------------------------------------------ 10/10/2016
+-- crear tablas para la guia de remision
+CREATE TABLE almacen.motivo_guia
+(
+  idmotivo_guia serial NOT NULL,
+  descripcion character varying(150),
+  operacion character varying(1),
+  mostrar_en_guia character varying(1),
+  estado character varying(1),
+  ingreso_tipo_movimiento integer,
+  ingreso_buscar_guia character varying(1),
+  ingreso_b_esta_sede character varying(1),
+  ingreso_b_otra_sede character varying(1),
+  ingreso_libre_item character varying(1),
+  salida_tipo_movimiento integer,
+  salida_buscar_venta character varying(1),
+  salida_buscar_compra character varying(1),
+  salida_libre_item character varying(1),
+  CONSTRAINT pk_motivo_guia PRIMARY KEY (idmotivo_guia)
+);
+
+CREATE TABLE almacen.guia_remision
+(
+  idguia_remision serial NOT NULL,
+  idsucursal integer,
+  idtipodocumento integer,
+  serie character varying(5),
+  numero character varying(6),
+  idmotivo_guia integer,
+  tipo_guia character varying(1),
+  fecha_traslado date,
+  destinatario character varying(45),
+  ruc_destinatario character varying(11),
+  dni_destinatario character varying(8),
+  punto_partida text,
+  idubigeo_partida character varying(6),
+  punto_llegada text,
+  idubigeo_llegada character varying(6),
+  idtransporte integer,
+  chofer character varying(45),
+  marca_nroplaca character varying(45),
+  const_inscripcion character varying(45),
+  lic_conducir character varying(45),
+  costo_minimo numeric(10,2),
+  comprobante_pago character varying(45),
+  fecha_registro date,
+  finalizado character varying(1),
+  idusuario integer,
+  CONSTRAINT pk_guia_remision PRIMARY KEY (idguia_remision)
+);
+
+---------------------------------------------------------------------------- 15/10/2016
+-- agregar columna en tabla motivo guia
+ALTER TABLE almacen.motivo_guia ADD COLUMN afecta_stock character varying(1);
+
+-- crea tabla
+CREATE TABLE almacen.detalle_guia_remision
+(
+  iddetalle_guia_remision serial NOT NULL,
+  idguia_remision integer NOT NULL,
+  idproducto integer,
+  descripcion text,
+  idunidad integer,
+  cantidad integer,
+  precio double precision,
+  costo numeric(10,2),
+  peso numeric(10,2),
+  idalmacen integer,
+  afecta_stock character varying(1),
+  afecta_serie character varying(1),
+  finalizado character varying(1),
+  estado character varying(1),
+  CONSTRAINT pk_detalle_guia_remision PRIMARY KEY (iddetalle_guia_remision)
+);
+
+CREATE TABLE almacen.detalle_guia_remision_serie
+(
+  iddetalle_guia_remision integer NOT NULL,
+  idguia_remision integer NOT NULL,
+  idproducto integer NOT NULL,
+  serie character varying(45) NOT NULL,
+  finalizado character varying(1),
+  estado character varying(1),
+  CONSTRAINT pk_detalle_guia_remision_serie PRIMARY KEY (iddetalle_guia_remision, idguia_remision, idproducto, serie)
+);
+
+--------------------------------------------------------------------------------------------- 17/10/2016
+-- crear tabla
+CREATE TABLE general.transporte
+(
+  idtransporte serial NOT NULL,
+  nombre character varying(45),
+  ruc character varying(11),
+  estado character varying(1),
+  CONSTRAINT pk_transporte PRIMARY KEY (idtransporte)
+);
+
+--------------------------------------------------------------------------------------------- 21/10/2016
+-- agregar campos en tabla guia
+ALTER TABLE almacen.guia_remision ADD COLUMN referencia character varying(1);
+ALTER TABLE almacen.guia_remision ADD COLUMN idreferencia integer;
+ALTER TABLE almacen.guia_remision ADD COLUMN estado character varying(1);
+
+-- modificar campo tabla compra
+DROP VIEW compra.compra_view;
+DROP VIEW almacen.recepcion_view;
+ALTER TABLE compra.compra ALTER COLUMN fecha_compra TYPE date;
+
+-- crear de nuevo las vistas
+CREATE OR REPLACE VIEW compra.compra_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, tv.descripcion AS tipoventa, m.descripcion AS moneda, m.simbolo, t.descripcion AS tipo_documento, COALESCE(c.serie::text || '-'::text, ''::text) || c.numero::text AS nrodocumento, c.subtotal, c.igv, c.subtotal + c.igv AS total, c.estado, c.recepcionado, c.fecha_compra, to_char(c.fecha_compra::timestamp with time zone, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idsucursal, p.ruc
+   FROM compra.compra c
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = c.idtipoventa
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+   
+CREATE OR REPLACE VIEW almacen.recepcion_view AS 
+ SELECT c.idcompra, p.nombre AS proveedor, ((t.abreviatura::text || '-'::text) || COALESCE(c.serie::text || '-'::text, ''::text)) || c.numero::text AS documento, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, count(DISTINCT dc.iddetalle_compra) AS cantidad, max(r.fecha) AS fecha_recepcion, to_char(c.fecha_compra, 'DD/MM/YYYY'::text) AS fecha_compra_es, c.idtipodocumento, c.serie, c.numero
+   FROM compra.compra c
+   LEFT JOIN compra.detalle_compra dc ON dc.idcompra = c.idcompra AND dc.recepcionado::text = 'S'::text AND dc.estado::text = 'A'::text
+   JOIN compra.proveedor p ON p.idproveedor = c.idproveedor
+   LEFT JOIN venta.tipo_documento t ON t.idtipodocumento = c.idtipodocumento
+   LEFT JOIN almacen.recepcion r ON r.idcompra = c.idcompra AND r.referencia::text = 'C'::text
+  GROUP BY c.idcompra, p.nombre, t.abreviatura, c.serie, c.numero, c.estado, c.recepcionado, c.fecha_compra, c.idsucursal, c.idtipodocumento;
+
+CREATE OR REPLACE VIEW almacen.guia_remision_view AS 
+ SELECT g.idguia_remision, (g.serie::text || '-'::text) || g.numero::text AS nroguia, g.fecha_traslado, m.descripcion AS motivo, g.destinatario, g.ruc_destinatario, g.dni_destinatario, g.punto_partida, g.punto_llegada, g.idsucursal, g.estado, g.finalizado, g.tipo_guia
+   FROM almacen.guia_remision g
+   JOIN almacen.motivo_guia m ON m.idmotivo_guia = g.idmotivo_guia;
+
+------------------------------------------------------------------------------------------ 22/10/2016
+-- modificar campo 
+ALTER TABLE almacen.tipo_movimiento ALTER COLUMN tipo TYPE character varying(3);
+
+------------------------------------------------------------------------------------------ 24/10/2016
+-- eliminar tablas que no sirven
+-- nota: estas tablas es lo que yo considero eliminar, 
+-- creo que se deberia consultar primero con los demas
+-- DROP TABLE compra.movimiento_almacen;
+-- DROP TABLE compra.tipo_compra;
+-- DROP TABLE compra.tipo_movimiento;
+-- DROP TABLE compra.tipo_precio;
+-- DROP TABLE compra.tipo_presentacion;
+-- DROP TABLE compra.almacen;
+-- DROP TABLE compra.categoria;
+-- DROP TABLE seguridad.tipoempleado;
+-- DROP TABLE venta.pago_venta;
+-- DROP TABLE venta.recibo_ingreso;
+-- note que estoy eliminando estas tablas del esquema "public", 
+-- si es que no existe en sus bd la tabla, pues no ejecutar
+-- DROP TABLE letra;
+-- DROP TABLE requisto_credito;
+-- DROP TABLE usuario;
+
+-- modificar datos tabla [almacen.tipo_movimiento]
+-- aqui se deberia considerar el tipo segun criterio, modificar por el modulo "tipo_movimiento"
+-- UPDATE almacen.tipo_movimiento SET tipo = case when tipo = 'ENT' then 'E' else 'S' end;
+
+-- modificar campo 
+ALTER TABLE almacen.tipo_movimiento ALTER COLUMN descripcion TYPE character varying(90);
+
+------------------------------------------------------------------------------------------- 25/10/2016
+-- modificar campo tabla detalle_guia
+ALTER TABLE almacen.detalle_guia_remision ALTER COLUMN peso TYPE character varying(30);
+
+-- modificar vista
+CREATE OR REPLACE VIEW almacen.guia_remision_view AS 
+ SELECT g.idguia_remision, (g.serie::text || '-'::text) || g.numero::text AS nroguia, g.fecha_traslado, m.descripcion AS motivo, g.destinatario, g.ruc_destinatario, g.dni_destinatario, g.punto_partida, g.punto_llegada, g.idsucursal, g.estado, g.finalizado, g.tipo_guia, g.serie, g.numero
+   FROM almacen.guia_remision g
+   JOIN almacen.motivo_guia m ON m.idmotivo_guia = g.idmotivo_guia;
+
+-------------------------------------------------------------------------------------------- 26/10/2016
+-- modificar vista
+CREATE OR REPLACE VIEW almacen.guia_remision_view AS 
+ SELECT g.idguia_remision, (g.serie::text || '-'::text) || g.numero::text AS nroguia, g.fecha_traslado, m.descripcion AS motivo, g.destinatario, g.ruc_destinatario, g.dni_destinatario, g.punto_partida, g.punto_llegada, g.idsucursal, g.estado, g.finalizado, g.tipo_guia, g.serie, g.numero, g.idmotivo_guia
+   FROM almacen.guia_remision g
+   JOIN almacen.motivo_guia m ON m.idmotivo_guia = g.idmotivo_guia;
+
+-- crear esquema para las comisiones
+CREATE SCHEMA comision;
+
+-- crear tabla
+CREATE TABLE comision.comision
+(
+  idsucursal integer NOT NULL,
+  idproducto integer NOT NULL,
+  dia_min integer,
+  dia_max integer,
+  pago numeric(10,2),
+  coeficiente numeric(10,2),
+  CONSTRAINT pk_comision PRIMARY KEY (idsucursal, idproducto)
+);
+
+--------------------------------------------------------------------------------------------- 10/11/2016
+-- agregar campo en tabla preventa
+alter table venta.preventa add column serie character varying(6);
+
+-- modificar campo 
+alter table almacen.detalle_almacen alter column cantidad type numeric(18,2);
+
+
+---------------------------------------------------------------------------------------------- 14/11/2016
+-- agregar campo para la anulacion de la venta
+ALTER TABLE venta.venta ADD COLUMN motivo_anulacion text;
+ALTER TABLE venta.venta ADD COLUMN fecha_hora_anulacion timestamp without time zone;
+ALTER TABLE venta.venta ADD COLUMN idusuario_anulacion integer;
+
+
+---------------------------------------------------------------------------------------------- 14/11/2016
+-- agregar campo en el detalle_venta
+ALTER TABLE venta.detalle_venta ADD COLUMN oferta character varying(1);
+
+---------------------------------------------------------------------------------------------- 15/11/2016
+-- crear tabla
+CREATE TABLE general.chofer
+(
+  idchofer serial NOT NULL,
+  nombre character varying(60),
+  licencia character varying(60),
+  placa character varying(60),
+  inscripcion character varying(60),
+  estado character varying(1),
+  CONSTRAINT pk_chofer PRIMARY KEY (idchofer)
+);
+
+-- agregar campos en guia
+ALTER TABLE almacen.guia_remision ADD COLUMN transporte character varying(100);
+ALTER TABLE almacen.guia_remision ADD COLUMN ruc_transporte character varying(11);
+
+-- agregar campo venta
+ALTER TABLE venta.venta ADD COLUMN guias_remision character varying(100);
+
+-- vista corregido
+CREATE OR REPLACE VIEW almacen.view_stock AS 
+ SELECT d.idproducto,
+    COALESCE(sum(d.cantidad::double precision * u.cantidad_unidad_min * d.tipo_number::double precision), 0::double precision) AS stock,
+    producto.descripcion AS producto,
+    producto.descripcion_detallada AS producto_detallado,
+    marca.descripcion AS marca,
+    modelo.descripcion AS modelo,
+    color.descripcion AS color,
+    unidad.descripcion AS unidad_medida,
+    marca.idmarca,
+    modelo.idmodelo,
+    color.idcolor,
+    producto.imagen_producto,
+    sum(COALESCE(d.precio_costo, 0::double precision)) AS precio_costo,
+    sum(COALESCE(d.precio_venta, 0::double precision)) AS precio_venta,
+    categoria.descripcion AS categoria,
+    COALESCE(COALESCE(producto.peso, ''::character varying), '0'::character varying) AS peso,
+    COALESCE(tamanio.descripcion, '0'::character varying) AS tamanio,
+    producto.codigo_barras,
+    producto.idcategoria,
+    d.idalmacen
+   FROM compra.producto
+     LEFT JOIN almacen.detalle_almacen d ON producto.idproducto = d.idproducto and d.estado='A'
+     LEFT JOIN compra.producto_unidad u ON u.idproducto = d.idproducto AND u.idunidad = d.idunidad
+     LEFT JOIN compra.unidad ON unidad.idunidad = u.idunidad
+     LEFT JOIN general.marca ON marca.idmarca = producto.idmarca
+     LEFT JOIN general.modelo ON modelo.idmodelo = producto.idmodelo
+     LEFT JOIN general.color ON color.idcolor = producto.idcolor
+     LEFT JOIN general.categoria ON categoria.idcategoria = producto.idcategoria
+     LEFT JOIN general.tamanio ON tamanio.idtamanio = producto.idtamanio
+  WHERE producto.estado = 'A'::bpchar
+  GROUP BY d.idproducto, producto.descripcion, producto.descripcion_detallada, unidad.descripcion, marca.descripcion, 
+  modelo.descripcion, color.descripcion, marca.idmarca, modelo.idmodelo, color.idcolor, producto.imagen_producto, 
+  categoria.descripcion, producto.peso, tamanio.descripcion, producto.codigo_barras, producto.idcategoria, d.idalmacen;
+
+-------------------------------------------------------------------------------------------------------- 19/11/2016
+-- agregar campo en tabla detalle preventa
+alter table venta.detalle_preventa add column oferta character varying(1);
+
+
+------------------------------------------------------------------------------------------------------- 21/11/2016
+-- agregar campo en producto
+ALTER TABLE compra.producto ADD COLUMN idproducto_padre integer;
+ALTER TABLE compra.producto ALTER COLUMN idproducto_padre SET DEFAULT 0;
+
+------------------------------------------------------------------------------------------------------- 22/11/2016
+-- agregar campo para el tipo documento
+ALTER TABLE venta.tipo_documento ADD COLUMN facturacion_electronica character varying(1);
+
+ALTER TABLE seguridad.param ALTER COLUMN valor TYPE character varying(100);
+
+-- crear parametro "facturacion_electronica" segun sea el caso
+-- crear parametro "url_webservice" solo si facturacion_electronica=S
+
+------------------------------------------------------------------------------------------------------- 23/11/2016
+-- agregar campo para la unidad de medida
+ALTER TABLE compra.unidad ADD COLUMN codsunat character varying(15);
+
+-- agregar tabla
+CREATE TABLE venta.facturacion
+(
+  idreferencia integer NOT NULL,
+  referencia character varying(45) NOT NULL,
+  tipo_doc character varying(5),
+  serie character varying(6),
+  numero character varying(15),
+  archivo character varying(45),
+  ruta character varying(100),
+  num_ruc character varying(11),
+  tip_docu character varying(5),
+  num_docu character varying(30),
+  fec_carg character varying(20),
+  fec_gene character varying(20),
+  fec_envi character varying(20),
+  des_obse text,
+  nom_arch character varying(45),
+  ind_situ character varying(5),
+  tip_arch character varying(10),
+  firm_digital text,
+  CONSTRAINT pk_facturacion PRIMARY KEY (idreferencia, referencia)
+);
+
+------------------------------------------------------------------------------------------------------ 25/11/2016
+-- agregar campo
+ALTER TABLE venta.facturacion ADD COLUMN resumen_value text;
+ALTER TABLE venta.facturacion ADD COLUMN resumen_firma text;
+
+------------------------------------------------------------------------------------------------------ 29/11/2016
+-- tabla para los tipos de notas
+CREATE TABLE general.tipo_notacredito (
+    idtipo_notacredito character varying(5) NOT NULL,
+    descripcion character varying(100),
+    CONSTRAINT pk_tipo_notacredito PRIMARY KEY (idtipo_notacredito)
+);
+INSERT INTO general.tipo_notacredito VALUES ('01', 'ANULACION DE LA OPERACION');
+INSERT INTO general.tipo_notacredito VALUES ('02', 'ANULACION POR ERROR EN EL RUC');
+INSERT INTO general.tipo_notacredito VALUES ('03', 'CORRECCION POR ERROR EN EL RUC');
+INSERT INTO general.tipo_notacredito VALUES ('04', 'DESCUENTO GLOBAL');
+INSERT INTO general.tipo_notacredito VALUES ('05', 'DESCUENTO POR ITEM');
+INSERT INTO general.tipo_notacredito VALUES ('06', 'DEVOLUCION TOTAL');
+INSERT INTO general.tipo_notacredito VALUES ('07', 'DEVOLUCION POR ITEM');
+INSERT INTO general.tipo_notacredito VALUES ('08', 'BONIFICACION');
+INSERT INTO general.tipo_notacredito VALUES ('09', 'DISMINUCION EN EL VALOR');
+INSERT INTO general.tipo_notacredito VALUES ('10', 'OTROS CONCEPTOS');
+
+CREATE TABLE general.tipo_notadebito (
+    idtipo_notadebito character varying(5) NOT NULL,
+    descripcion character varying(100),
+	CONSTRAINT pk_tipo_notadebito PRIMARY KEY (idtipo_notadebito)
+);
+INSERT INTO general.tipo_notadebito VALUES ('01', 'INTERESES POR MORA');
+INSERT INTO general.tipo_notadebito VALUES ('02', 'AUMENTO EN EL VALOR');
+INSERT INTO general.tipo_notadebito VALUES ('03', 'PENALIDADES/ OTROS CONCEPTOS');
+
+-- agregar campos en tablas
+ALTER TABLE venta.notacredito ADD COLUMN idtipo_notacredito character varying(5);
+
+--------------------------------------------------------------------------------------------------------- 30/11/2016
+-- crear tabla para el documento de baja
+CREATE TABLE venta.documento_baja
+(
+  iddocumento_baja serial,
+  idsucursal integer,
+  idusuario integer,
+  fecha date,
+  correlativo integer,
+  idreferencia integer,
+  referencia character varying(45),
+  fec_gene character varying(20),
+  tip_docu character varying(5),
+  num_docu character varying,
+  motivo text,
+  CONSTRAINT pk_documento_baja PRIMARY KEY (iddocumento_baja)
+);
+
+-- modificar campo en tabla
+ALTER TABLE venta.facturacion ALTER COLUMN serie TYPE character varying(15);
+
+-- agregar campo
+ALTER TABLE venta.detalle_notacredito ADD COLUMN igv double precision;
+
+
+---------------------------------------------------------------------------------------------------------- 08/12/2016
+-- agregar campo detalle venta
+ALTER TABLE venta.detalle_venta ADD COLUMN igv double precision;
+
+---------------------------------------------------------------------------------------------------------- 11/12/2016
+-- crear tabla
+CREATE TABLE seguridad.datos_usuario
+(
+  idsucursal integer NOT NULL,
+  idusuario integer NOT NULL,
+  clave character varying(30) NOT NULL,
+  valor text,
+  CONSTRAINT pk_datos_usuario PRIMARY KEY (idsucursal, idusuario, clave)
+);
+
+---------------------------------------------------------------------------------------------------------- 15/12/2016
+-- crear tabla
+CREATE TABLE compra.producto_precio_unitario
+(
+  idproducto integer NOT NULL,
+  idsucursal integer NOT NULL,
+  precio_compra double precision,
+  precio_venta double precision,
+  precio_costo_ponderado double precision,
+  CONSTRAINT pk_producto_precio_unitario PRIMARY KEY (idproducto, idsucursal)
+);
+
+---------------------------------------------------------------------------------------------------------- 01/01/2017
+-- agregar tablas para la facturacion electronica
+CREATE TABLE general.tipo_operacion
+(
+  codtipo_operacion character varying(5) NOT NULL,
+  descripcion character varying(100),
+  CONSTRAINT pk_tipo_operacion PRIMARY KEY (codtipo_operacion)
+);
+INSERT INTO general.tipo_operacion VALUES ('01', 'VENTA INTERNA');
+INSERT INTO general.tipo_operacion VALUES ('02', 'EXPORTACION');
+INSERT INTO general.tipo_operacion VALUES ('03', 'NO DOMICILIADOS');
+INSERT INTO general.tipo_operacion VALUES ('04', 'VENTA INTERNA - ANTICIPOS');
+INSERT INTO general.tipo_operacion VALUES ('05', 'VENTA ITINERANTE');
+INSERT INTO general.tipo_operacion VALUES ('06', 'FACTURA GUIA');
+INSERT INTO general.tipo_operacion VALUES ('07', 'VENTA ARROZ PILADO');
+INSERT INTO general.tipo_operacion VALUES ('08', 'FACTURA - COMPROBANTE DE PERCEPCION');
+INSERT INTO general.tipo_operacion VALUES ('10', 'FACTURA - GUIA REMITENTE');
+INSERT INTO general.tipo_operacion VALUES ('11', 'FACTURA - GUIA TRANSPORTISTA');
+INSERT INTO general.tipo_operacion VALUES ('12', 'BOLETA DE VENTA - COMPROBANTE DE PERCEPCION');
+
+CREATE TABLE general.grupo_igv
+(
+  codgrupo_igv character varying(10) NOT NULL,
+  decripcion character varying(45),
+  igv double precision,
+  tipo_igv_default character varying(5),
+  tipo_igv_oferta character varying(5),
+  orden integer,
+  CONSTRAINT pk_grupo_igv PRIMARY KEY (codgrupo_igv)
+);
+INSERT INTO general.grupo_igv VALUES ('GRA', 'GRAVADO', 0.18, '10', '14', 1);
+INSERT INTO general.grupo_igv VALUES ('INA', 'INAFECTO', 0, '30', '31', 2);
+INSERT INTO general.grupo_igv VALUES ('EXO', 'EXONERADO', 0, '20', '21', 3);
+
+CREATE TABLE general.tipo_igv
+(
+  codtipo_igv character varying(5) NOT NULL,
+  descripcion character varying(100),
+  CONSTRAINT pk_tipo_igv PRIMARY KEY (codtipo_igv)
+);
+INSERT INTO general.tipo_igv VALUES ('10', 'GRAVADO - OPERACION ONEROSA');
+INSERT INTO general.tipo_igv VALUES ('11', 'GRAVADO - RETIRO POR PREMIO');
+INSERT INTO general.tipo_igv VALUES ('12', 'GRAVADO - RETIRO POR DONACION');
+INSERT INTO general.tipo_igv VALUES ('13', 'GRAVADO - RETIRO');
+INSERT INTO general.tipo_igv VALUES ('14', 'GRAVADO - RETIRO POR PUBLICIDAD');
+INSERT INTO general.tipo_igv VALUES ('15', 'GRAVADO - BONIFICACIONES');
+INSERT INTO general.tipo_igv VALUES ('16', 'GRAVADO - RETIRO POR ENTREGA A TRABAJADORES');
+INSERT INTO general.tipo_igv VALUES ('17', 'GRAVADO - IVAP');
+INSERT INTO general.tipo_igv VALUES ('20', 'EXONERADO - OPERACION ONEROSA');
+INSERT INTO general.tipo_igv VALUES ('21', 'EXONERADO - TRANSFERENCIA GRATUITA');
+INSERT INTO general.tipo_igv VALUES ('30', 'INAFECTO - OPERACION ONEROSA');
+INSERT INTO general.tipo_igv VALUES ('31', 'INAFECTO - RETIRO POR BONIFICACION');
+INSERT INTO general.tipo_igv VALUES ('32', 'INAFECTO - RETIRO');
+INSERT INTO general.tipo_igv VALUES ('33', 'INAFECTO - RETIRO POR MUESTRAS MEDICAS');
+INSERT INTO general.tipo_igv VALUES ('34', 'INAFECTO - RETIRO POR CONVENIO COLECTIVO');
+INSERT INTO general.tipo_igv VALUES ('35', 'INAFECTO - RETIRO POR PREMIO');
+INSERT INTO general.tipo_igv VALUES ('36', 'INAFECTO - RETIRO POR PUBLICIDAD');
+INSERT INTO general.tipo_igv VALUES ('40', 'EXPORTACION');
+
+-- agregar columnas en las tablas
+ALTER TABLE venta.venta ADD COLUMN codtipo_operacion character varying(5);
+ALTER TABLE venta.detalle_venta ADD COLUMN codgrupo_igv character varying(10);
+ALTER TABLE venta.detalle_venta ADD COLUMN codtipo_igv character varying(5);
+
+ALTER TABLE venta.preventa ADD COLUMN codtipo_operacion character varying(5);
+ALTER TABLE venta.detalle_preventa ADD COLUMN codgrupo_igv character varying(10);
+ALTER TABLE venta.detalle_preventa ADD COLUMN codtipo_igv character varying(5);
+
+ALTER TABLE venta.detalle_notacredito ADD COLUMN codgrupo_igv character varying(10);
+ALTER TABLE venta.detalle_notacredito ADD COLUMN codtipo_igv character varying(5);
+
+-- agregar parametro
+INSERT INTO seguridad.param VALUES ('default_igv', 'INA', 'Codigo del grupo de igv de los item en venta', 'N');
+
+-- crear tabla
+CREATE TABLE compra.producto_precio_unitario
+(
+  idproducto integer NOT NULL,
+  idsucursal integer NOT NULL,
+  precio_compra double precision,
+  precio_venta double precision,
+  precio_costo_ponderado double precision,
+  CONSTRAINT pk_producto_precio_unitario PRIMARY KEY (idproducto, idsucursal)
+);
+
+---------------------------------------------------------------------------------------------------- 07/01/2017
+-- modificar vista preventa
+DROP VIEW venta.preventa_view;
+CREATE OR REPLACE VIEW venta.preventa_view AS 
+ SELECT p.idpreventa, p.idcliente, p.idsucursal, p.idtipoventa, p.idusuario, p.fecha, p.estado, p.idtipodocumento, p.idalmacen, p.subtotal, p.valor_igv, p.igv, p.descuento, p.idvendedor, p.idmoneda, p.pendiente, tv.descripcion AS tipoventa, td.descripcion AS tipodocumento, c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, u.nombres AS vendedor, m.descripcion AS moneda, p.subtotal + p.igv - p.descuento AS total, p.serie, m.abreviatura AS moneda_abreviatura, c.dni, c.ruc, td.ruc_obligatorio, td.dni_obligatorio, p.codtipo_operacion
+   FROM venta.preventa p
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = p.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = p.idtipodocumento
+   JOIN venta.cliente c ON c.idcliente = p.idcliente
+   JOIN seguridad.usuario u ON u.idusuario = p.idvendedor
+   JOIN general.moneda m ON m.idmoneda = p.idmoneda;
+
+   
+----------------------------------------------------------------------------------------------------- 07/02/2017
+-- agregar parametros
+-- "url_consultas_sunat", "validar_ruc"=>"S"
+
+
+----------------------------------------------------------------------------------------------------- 18/02/2017
+-- crear esquema
+CREATE SCHEMA comision;
+
+-- crear tablas
+CREATE TABLE comision.rango_comision
+(
+  dias_min integer NOT NULL,
+  dias_max integer NOT NULL,
+  estado character varying(1),
+  CONSTRAINT pk_rango_comision PRIMARY KEY (dias_min, dias_max)
+);
+
+CREATE TABLE comision.mes_comision
+(
+  anio integer NOT NULL,
+  mes integer NOT NULL,
+  idsucursal integer NOT NULL,
+  abierto character varying(1),
+  estado character varying(1),
+  CONSTRAINT pk_mes_comision PRIMARY KEY (anio, mes, idsucursal)
+);
+
+CREATE TABLE comision.param_comision
+(
+  idsucursal integer NOT NULL,
+  idmarca integer NOT NULL,
+  dias_min integer NOT NULL,
+  dias_max integer NOT NULL,
+  anio integer NOT NULL,
+  mes integer NOT NULL,
+  comision double precision,
+  CONSTRAINT pk_param_comision PRIMARY KEY (idsucursal, idmarca, dias_min, dias_max, anio, mes)
+);
+
+
+-------------------------------------------------------------------------------------------- 22/05/2017
+-- agregar campo en tablan
+ALTER TABLE venta.notacredito ADD COLUMN canjeado character varying(1);
+ALTER TABLE credito.amortizacion ADD COLUMN idtipodocumento integer;
+ALTER TABLE credito.amortizacion ADD COLUMN idmoneda integer;
+ALTER TABLE credito.amortizacion ADD COLUMN tipo_recibo character varying(5);
+ALTER TABLE credito.amortizacion ADD COLUMN idnotacredito integer;
+
+-- si hay registros en la tablas amortizacion y notacredito, actualizar los nuevos campos
+UPDATE venta.notacredito SET canjeado='N';
+UPDATE credito.amortizacion SET idtipodocumento=(SELECT valor::integer FROM seguridad.param WHERE idparam='idnota_credito');
+UPDATE credito.amortizacion SET idmoneda=1; -- nuevos soles
+UPDATE credito.amortizacion SET tipo_recibo='RI';
+
+-- crear vista
+CREATE OR REPLACE VIEW venta.notacredito_canje_view AS 
+ SELECT r.idnotacredito, 
+    (((td.abreviatura::text || '-'::text) || r.serie::text) || '-'::text) || r.numero::text AS nrodoc, 
+    r.idcliente, r.idmoneda, r.fecha, r.canjeado, 
+    r.subtotal + COALESCE(r.igv, 0::numeric) AS monto, r.motivo AS concepto, 
+    r.idtipo_notacredito, m.descripcion AS moneda, t.descripcion AS tiponota, 
+    r.idsucursal, r.estado, r.idventa
+   FROM venta.notacredito r
+   JOIN general.moneda m ON m.idmoneda = r.idmoneda
+   JOIN general.tipo_notacredito t ON t.idtipo_notacredito::text = r.idtipo_notacredito::text
+   JOIN venta.tipo_documento td ON td.idtipodocumento = r.idtipodocumento;
+   
+------------------------------------------------------------------------------------------------------------ 23/06/2017
+--- agregar campo en tabla
+ALTER TABLE almacen.almacen ADD COLUMN mostrar_en_compra character varying(1);
+
+-- modificar la vista
+CREATE OR REPLACE VIEW credito.credito_view AS 
+ SELECT DISTINCT ON (c.idcredito) c.idcredito, c.idsucursal, c.idventa, 
+    c.idcliente, 
+    (l.nombres::text || ' '::text) || COALESCE(l.apellidos, ''::character varying)::text AS cliente, 
+    e.descripcion AS estado_credito, c.nro_credito, c.fecha_credito, 
+    c.nro_letras, c.monto_facturado, c.interes, c.monto_credito, c.pagado, 
+    c.central_riesgo, c.dias_gracia, c.tasa, c.inicial, c.gastos, c.capital, 
+    c.estado, c.idmoneda, m.descripcion AS moneda, 
+    (g.nombres::text || ' '::text) || COALESCE(g.apellidos, ''::character varying)::text AS garante, 
+    v.comprobante, c.id_estado_credito, 
+    COALESCE(l.direccion_principal, cd.direccion, ''::text) AS direccion, 
+    COALESCE(h.idcobrador, v.idvendedor) AS idcobrador, zona.zona
+   FROM credito.credito c
+   JOIN venta.cliente l ON l.idcliente = c.idcliente
+   JOIN credito.estado_credito e ON e.id_estado_credito = c.id_estado_credito
+   LEFT JOIN venta.cliente g ON g.idcliente = c.idgarante
+   JOIN venta.venta_view v ON v.idventa = c.idventa
+   LEFT JOIN general.zona ON zona.idzona = l.idzona
+   LEFT JOIN cobranza.hoja_ruta h ON h.idventa = c.idventa AND h.idsucursal = c.idsucursal
+   LEFT JOIN ( SELECT cliente_direccion.idcliente, 
+    array_to_string(array_agg(cliente_direccion.direccion), ', '::text) AS direccion
+   FROM venta.cliente_direccion
+  WHERE cliente_direccion.estado = 'A'::bpchar
+  GROUP BY cliente_direccion.idcliente) cd ON cd.idcliente = l.idcliente
+   JOIN general.moneda m ON m.idmoneda = c.idmoneda;
+   
+-------------------------------------------------------------------------------------------------------------- 27/06/2017
+-- modificar la vista
+CREATE OR REPLACE VIEW almacen.view_stock AS 
+ SELECT d.idproducto,
+    COALESCE(sum(d.cantidad::double precision * u.cantidad_unidad_min * d.tipo_number::double precision), 0::double precision) AS stock,
+    producto.descripcion AS producto,
+    producto.descripcion_detallada AS producto_detallado,
+    marca.descripcion AS marca,
+    modelo.descripcion AS modelo,
+    color.descripcion AS color,
+    unidad.descripcion AS unidad_medida,
+    marca.idmarca,
+    modelo.idmodelo,
+    color.idcolor,
+    producto.imagen_producto,
+    sum(COALESCE(d.precio_costo, 0::double precision)) AS precio_costo,
+    sum(COALESCE(d.precio_venta, 0::double precision)) AS precio_venta,
+    categoria.descripcion AS categoria,
+    COALESCE(COALESCE(producto.peso, ''::character varying), '0'::character varying) AS peso,
+    COALESCE(tamanio.descripcion, '0'::character varying) AS tamanio,
+    producto.codigo_barras,
+    producto.idcategoria,
+    d.idalmacen
+   FROM compra.producto
+     LEFT JOIN almacen.detalle_almacen d ON producto.idproducto = d.idproducto AND d.estado = 'A'::bpchar
+     LEFT JOIN compra.producto_unidad u ON u.idproducto = d.idproducto AND u.idunidad = d.idunidad
+     LEFT JOIN compra.unidad ON unidad.idunidad = producto.idunidad
+     LEFT JOIN general.marca ON marca.idmarca = producto.idmarca
+     LEFT JOIN general.modelo ON modelo.idmodelo = producto.idmodelo
+     LEFT JOIN general.color ON color.idcolor = producto.idcolor
+     LEFT JOIN general.categoria ON categoria.idcategoria = producto.idcategoria
+     LEFT JOIN general.tamanio ON tamanio.idtamanio = producto.idtamanio
+  WHERE producto.estado = 'A'::bpchar
+  GROUP BY d.idproducto, producto.descripcion, producto.descripcion_detallada, unidad.descripcion, marca.descripcion, modelo.descripcion, color.descripcion, marca.idmarca, modelo.idmodelo, color.idcolor, producto.imagen_producto, categoria.descripcion, producto.peso, tamanio.descripcion, producto.codigo_barras, producto.idcategoria, d.idalmacen;
+
+
+--------------------------------------------------------------------------------------------------------------- 01/07/2017
+-- agregar campo tabla detalle compra
+ALTER TABLE compra.detalle_compra ADD COLUMN descuento numeric(18,4);
+
+--------------------------------------------------------------------------------------------------------------- 05/07/2017
+-- agregar campo compra
+ALTER TABLE compra.compra ADD COLUMN cambio_moneda_flete double precision;
+
+------------------------------------------------------------------------------------------------------------ 06/07/2017
+-- agregar campo en tabla kardex
+ALTER TABLE almacen.kardex ADD COLUMN tipo character varying(10);
+
+-- consulta para actualizar el nuevo campo de kardex
+UPDATE almacen.kardex SET tipo = sq.tipo
+FROM (SELECT tipo, tipo_movimiento FROM almacen.tipo_movimiento) as sq
+WHERE sq.tipo_movimiento = kardex.tipo_movimiento;
+
+------------------------------------------------------------------------------------------------------------- 08/07/2017
+-- agregar campo
+ALTER TABLE venta.preventa_claro ADD COLUMN idpreventa integer;
+
+------------------------------------------------------------------------------------------------------------- 10/07/2017
+-- agregar campo en tabla kardex
+ALTER TABLE almacen.kardex ADD COLUMN cantidad_um double precision;
+
+-- consulta para actualizar el nuevo campo de kardex
+UPDATE almacen.kardex SET cantidad_um = coalesce(sq.cantidad_unidad_min,1)
+FROM (SELECT idproducto, idunidad, cantidad_unidad_min FROM compra.producto_unidad) as sq
+WHERE sq.idproducto=kardex.idproducto AND sq.idunidad=kardex.idunidad;
+
+------------------------------------------------------------------------------------------------------------- 11/07/2017
+-- agregar campos
+ALTER TABLE compra.detalle_compra ADD COLUMN cantidad_um double precision;
+ALTER TABLE almacen.recepcion ADD COLUMN cantidad_um double precision;
+ALTER TABLE almacen.detalle_almacen ADD COLUMN cantidad_um double precision;
+ALTER TABLE venta.detalle_venta ADD COLUMN cantidad_um double precision;
+ALTER TABLE almacen.despacho ADD COLUMN cantidad_um double precision;
+ALTER TABLE venta.detalle_notacredito ADD COLUMN cantidad_um double precision;
+ALTER TABLE almacen.detalle_guia_remision ADD COLUMN cantidad_um double precision;
+
+-- actualizar el valor de los nuevos campos
+UPDATE compra.detalle_compra SET cantidad_um = coalesce(sq.cantidad_unidad_min,1)
+FROM (SELECT idproducto, idunidad, cantidad_unidad_min FROM compra.producto_unidad) as sq
+WHERE sq.idproducto=detalle_compra.idproducto AND sq.idunidad=detalle_compra.idunidad;
+
+UPDATE almacen.recepcion SET cantidad_um = coalesce(sq.cantidad_unidad_min,1)
+FROM (SELECT idproducto, idunidad, cantidad_unidad_min FROM compra.producto_unidad) as sq
+WHERE sq.idproducto=recepcion.idproducto AND sq.idunidad=recepcion.idunidad;
+
+UPDATE almacen.detalle_almacen SET cantidad_um = coalesce(sq.cantidad_unidad_min,1)
+FROM (SELECT idproducto, idunidad, cantidad_unidad_min FROM compra.producto_unidad) as sq
+WHERE sq.idproducto=detalle_almacen.idproducto AND sq.idunidad=detalle_almacen.idunidad;
+
+UPDATE venta.detalle_venta SET cantidad_um = coalesce(sq.cantidad_unidad_min,1)
+FROM (SELECT idproducto, idunidad, cantidad_unidad_min FROM compra.producto_unidad) as sq
+WHERE sq.idproducto=detalle_venta.idproducto AND sq.idunidad=detalle_venta.idunidad;
+
+UPDATE almacen.despacho SET cantidad_um = coalesce(sq.cantidad_unidad_min,1)
+FROM (SELECT idproducto, idunidad, cantidad_unidad_min FROM compra.producto_unidad) as sq
+WHERE sq.idproducto=despacho.idproducto AND sq.idunidad=despacho.idunidad;
+
+UPDATE venta.detalle_notacredito SET cantidad_um = coalesce(sq.cantidad_unidad_min,1)
+FROM (SELECT idproducto, idunidad, cantidad_unidad_min FROM compra.producto_unidad) as sq
+WHERE sq.idproducto=detalle_notacredito.idproducto AND sq.idunidad=detalle_notacredito.idunidad;
+
+UPDATE almacen.detalle_guia_remision SET cantidad_um = coalesce(sq.cantidad_unidad_min,1)
+FROM (SELECT idproducto, idunidad, cantidad_unidad_min FROM compra.producto_unidad) as sq
+WHERE sq.idproducto=detalle_guia_remision.idproducto AND sq.idunidad=detalle_guia_remision.idunidad;
+
+------------------------------------------------------------------------------------------------------------ 12/07/2017
+-- crear tabla
+CREATE TABLE compra.temp_pedido
+(
+  idproducto integer NOT NULL,
+  stock numeric(10,2),
+  promedio_ventas numeric(10,2),
+  precio_compra double precision,
+  tiempo_reposicion integer,
+  tiempo_seguridad integer,
+  pedido_para integer,
+  stock_seguro numeric(10,2),
+  pp numeric(10,2),
+  critico integer,
+  sugerido numeric(10,2),
+  valor_compra numeric(10,2),
+  cantidad integer,
+  idsucursal integer NOT NULL,
+  idsucursal_consulta integer,
+  fecha_i character varying(12),
+  fecha_f character varying(12),
+  CONSTRAINT pktemp_pedido PRIMARY KEY (idproducto, idsucursal)
+);
+
+------------------------------------------------------------------------------------------------------------- 14/07/2017
+-- agregar campo pedido
+ALTER TABLE compra.pedido ADD COLUMN idproveedor integer;
+
+------------------------------------------------------------------------------------------------------------- 16/07/2017
+-- agregar campos facturacion
+ALTER TABLE venta.facturacion ADD COLUMN tip_docu_cliente character varying(5);
+ALTER TABLE venta.facturacion ADD COLUMN num_docu_cliente character varying(15);
+ALTER TABLE venta.facturacion ADD COLUMN estado character varying(1);
+ALTER TABLE venta.documento_baja ADD COLUMN estado character varying(1);
+
+------------------------------------------------------------------------------------------------------------- 17/07/2017
+-- agregamos vista
+create view compra.pedido_view as 
+SELECT p.idpedido, p.idsucursal, p.idusuario, p.fecha, p.descripcion, p.estado, 
+       p.atendido, p.aprobado, p.idtipo_pedido, p.idproveedor, 
+       e.nombre as proveedor, e.ruc
+  FROM compra.pedido p 
+  left join compra.proveedor e on e.idproveedor=p.idproveedor;
+  
+-- modificar tamanio campo
+ALTER TABLE compra.temp_pedido ALTER COLUMN stock TYPE numeric(20,2);
+ALTER TABLE compra.temp_pedido ALTER COLUMN promedio_ventas TYPE numeric(20,2);
+ALTER TABLE compra.temp_pedido ALTER COLUMN stock_seguro TYPE numeric(20,2);
+ALTER TABLE compra.temp_pedido ALTER COLUMN pp TYPE numeric(20,2);
+ALTER TABLE compra.temp_pedido ALTER COLUMN sugerido TYPE numeric(20,2);
+ALTER TABLE compra.temp_pedido ALTER COLUMN valor_compra TYPE numeric(20,2);
+
+
+--------------------------------------------------------------------------------------------------------------- 19/07/2017
+-- agregar campo venta
+ALTER TABLE venta.venta ADD COLUMN idmodalidad integer;
+
+-- modificar vista preventa
+CREATE OR REPLACE VIEW venta.preventa_view AS 
+ SELECT p.idpreventa, p.idcliente, p.idsucursal, p.idtipoventa, p.idusuario, 
+    p.fecha, p.estado, p.idtipodocumento, p.idalmacen, p.subtotal, p.valor_igv, 
+    p.igv, p.descuento, p.idvendedor, p.idmecanico, p.idmoneda, p.pendiente, 
+    tv.descripcion AS tipoventa, td.descripcion AS tipodocumento, 
+    c.nombres::text || COALESCE(' '::text || c.apellidos::text, ''::text) AS cliente, 
+    m.descripcion AS moneda, p.subtotal + p.igv - p.descuento AS total, p.serie, 
+    m.abreviatura AS moneda_abreviatura, c.dni, c.ruc, td.ruc_obligatorio, 
+    td.dni_obligatorio, p.codtipo_operacion, 
+    btrim((COALESCE(u.appat::text || ' '::text, ''::text) || u.apmat::text) || ' '::text, ''::text) || u.nombres::text AS vendedor, 
+    btrim((COALESCE(us.appat::text || ' '::text, ''::text) || us.apmat::text) || ' '::text, ''::text) || us.nombres::text AS mecanico, 
+    COALESCE(ram.descripcion::text, '-'::text) AS rampa, mi.modalidad, 
+    td.abreviatura AS td_documento, u.nombres::text AS vendedor_nombre, 
+    COALESCE(us.nombres::text, ''::text) AS mecanico_nombre, p.idmodalidad
+   FROM venta.preventa p
+   JOIN venta.tipo_venta tv ON tv.idtipoventa = p.idtipoventa
+   JOIN venta.tipo_documento td ON td.idtipodocumento = p.idtipodocumento
+   JOIN venta.cliente c ON c.idcliente = p.idcliente
+   JOIN seguridad.usuario u ON u.idusuario = p.idvendedor
+   JOIN general.moneda m ON m.idmoneda = p.idmoneda
+   LEFT JOIN seguridad.usuario us ON us.idusuario = p.idmecanico
+   LEFT JOIN venta.rampa ram ON ram.idrampa = p.idrampa
+   LEFT JOIN venta.modalidad mi ON mi.idmodalidad = p.idmodalidad;
+   
+--------------------------------------------------------------------------------------------------------------- 21/07/2017
+-- agregar campo en compra
+ALTER TABLE compra.compra ADD COLUMN equivalencia character varying(30);
+
+--------------------------------------------------------------------------------------------------------------- 07/08/2017
+-- agregar campos para la anulacion de nota de credito y compra
+ALTER TABLE venta.notacredito ADD COLUMN motivo_anulacion text;
+ALTER TABLE venta.notacredito ADD COLUMN fecha_hora_anulacion timestamp without time zone;
+ALTER TABLE venta.notacredito ADD COLUMN idusuario_anulacion integer;
+
+ALTER TABLE compra.compra ADD COLUMN motivo_anulacion text;
+ALTER TABLE compra.compra ADD COLUMN fecha_hora_anulacion timestamp without time zone;
+ALTER TABLE compra.compra ADD COLUMN idusuario_anulacion integer;
+
+---------------------------------------------------------------------------------------------------------------- 08/08/2017
+-- agregar campos para la anulacion
+ALTER TABLE venta.reciboingreso ADD COLUMN motivo_anulacion text;
+ALTER TABLE venta.reciboingreso ADD COLUMN fecha_hora_anulacion timestamp without time zone;
+ALTER TABLE venta.reciboingreso ADD COLUMN idusuario_anulacion integer;
+
+ALTER TABLE venta.reciboegreso ADD COLUMN motivo_anulacion text;
+ALTER TABLE venta.reciboegreso ADD COLUMN fecha_hora_anulacion timestamp without time zone;
+ALTER TABLE venta.reciboegreso ADD COLUMN idusuario_anulacion integer;
+
+---------------------------------------------------------------------------------------------------------------- 09/08/2017
+-- agregar campo en amortizacion
+ALTER TABLE credito.amortizacion ADD COLUMN motivo_anulacion text;
+ALTER TABLE credito.amortizacion ADD COLUMN fecha_hora_anulacion timestamp without time zone;
+ALTER TABLE credito.amortizacion ADD COLUMN idusuario_anulacion integer;
+
+
+---------------------------------------------------------------------------------------------------------------- 23/08/2017
+-- agregar campo en compra para el calculo del descuento
+ALTER TABLE compra.compra ADD COLUMN tipo_descuento character varying(1);
+
+---------------------------------------------------------------------------------------------------------------- 08/09/2017
+-- agregar campo en tabla facturacion
+ALTER TABLE venta.facturacion ADD COLUMN fecha date NOT NULL DEFAULT current_date;
+ALTER TABLE venta.facturacion ADD COLUMN actualizado integer NOT NULL DEFAULT 0;
+
+---------------------------------------------------------------------------------------------------------- 23/09/2017
+-- funcion para calcular el saldo inicial kardex
+CREATE OR REPLACE FUNCTION almacen.get_saldo_inicial(integer, integer, date)
+  RETURNS double precision AS
+$BODY$
+
+DECLARE _saldo double precision;
+BEGIN
+	SELECT SUM(cantidad * tipo) INTO _saldo
+	FROM (
+		SELECT idproducto, idalmacen, cantidad * COALESCE(cantidad_um, 1) as cantidad, 
+		CASE WHEN tipo = 'ENT' THEN 1 ELSE -1 END AS tipo, fecha_emision, hora
+		FROM almacen.kardex 
+		WHERE estado <> 'I'
+		ORDER BY idproducto, idalmacen, fecha_emision, hora
+	) AS sq
+	WHERE idproducto = $1 AND idalmacen = $2 AND fecha_emision < $3;
+
+	IF _saldo IS NULL THEN
+		_saldo := 0;
+	END IF;
+
+	RETURN _saldo;
+END
+
+$BODY$
+  LANGUAGE plpgsql;
+
+
+
+-- inicio linea: 1284
+-- ultima actualizacion: 23/09/2017

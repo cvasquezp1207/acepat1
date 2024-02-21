@@ -1,0 +1,4 @@
+mora plazo 5 dias habiles de 5 en 5
+descuento pago cliente calculado segun el mes que paga (diferencia entre meses)
+indicar venta cobro_caja y cobro_domicilio(10% mas) en venta
+los cobradores se van turnando
